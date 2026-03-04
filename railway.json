@@ -1,0 +1,1 @@
+{"deploy":{"startCommand":"python shopify_pennylane.py --cron","cronSchedule":"53 6 * * *"}}
