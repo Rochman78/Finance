@@ -26,6 +26,8 @@ import re
 import os
 import sys
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
 from pathlib import Path
 import psycopg2
@@ -871,7 +873,26 @@ def run_once(target_date=None, store_filter=None):
         telegram_send(f"\u2139\ufe0f Aucun versement {date_str} a traiter ({len(stores)} boutiques)")
 
 
+def start_health_server():
+    """Démarre un mini serveur HTTP pour satisfaire Render (Web Service)"""
+    port = int(os.environ.get("PORT", 10000))
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, *args):
+            pass  # Silence les logs HTTP
+
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    log.info(f"🌐 Serveur HTTP démarré sur le port {port}")
+
+
 def run_continuous():
+    start_health_server()
     log.info("="*60)
     log.info("🚀 DÉMARRAGE — Shopify Payments → Pennylane")
     log.info(f"   Mode: {'TEST (simulation)' if MODE_TEST else 'PRODUCTION'}")
