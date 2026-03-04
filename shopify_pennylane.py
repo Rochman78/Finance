@@ -893,6 +893,7 @@ def start_health_server():
 
 def run_continuous():
     start_health_server()
+    telegram_send("🎉 Bonne journée CHARLES — la migration est un succès !")
     log.info("="*60)
     log.info("🚀 DÉMARRAGE — Shopify Payments → Pennylane")
     log.info(f"   Mode: {'TEST (simulation)' if MODE_TEST else 'PRODUCTION'}")
