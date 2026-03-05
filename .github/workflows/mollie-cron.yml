@@ -26,13 +26,30 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run Mollie → PennyLane
+      - name: Run Mollie → PennyLane (7 boutiques)
         env:
           DATABASE_URL: ${{ secrets.MOLLIE_DATABASE_URL }}
-          MOLLIE_API_KEY: ${{ secrets.MOLLIE_API_KEY }}
-          SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
-          SHOPIFY_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ACCESS_TOKEN }}
           PENNYLANE_API_KEY: ${{ secrets.PENNYLANE_API_KEY }}
           MODE_TEST: 'false'
-          RUN_ONCE: 'true'
+          # LFC
+          MOLLIE_API_KEY_LFC: ${{ secrets.MOLLIE_API_KEY_LFC }}
+          SHOPIFY_ACCESS_TOKEN_LFC: ${{ secrets.SHOPIFY_ACCESS_TOKEN_LFC }}
+          # HET
+          MOLLIE_API_KEY_HET: ${{ secrets.MOLLIE_API_KEY_HET }}
+          SHOPIFY_ACCESS_TOKEN_HET: ${{ secrets.SHOPIFY_ACCESS_TOKEN_HET }}
+          # TAR
+          MOLLIE_API_KEY_TAR: ${{ secrets.MOLLIE_API_KEY_TAR }}
+          SHOPIFY_ACCESS_TOKEN_TAR: ${{ secrets.SHOPIFY_ACCESS_TOKEN_TAR }}
+          # RED
+          MOLLIE_API_KEY_RED: ${{ secrets.MOLLIE_API_KEY_RED }}
+          SHOPIFY_ACCESS_TOKEN_RED: ${{ secrets.SHOPIFY_ACCESS_TOKEN_RED }}
+          # COCO
+          MOLLIE_API_KEY_COCO: ${{ secrets.MOLLIE_API_KEY_COCO }}
+          SHOPIFY_ACCESS_TOKEN_COCO: ${{ secrets.SHOPIFY_ACCESS_TOKEN_COCO }}
+          # LOV
+          MOLLIE_API_KEY_LOV: ${{ secrets.MOLLIE_API_KEY_LOV }}
+          SHOPIFY_ACCESS_TOKEN_LOV: ${{ secrets.SHOPIFY_ACCESS_TOKEN_LOV }}
+          # RETE
+          MOLLIE_API_KEY_RETE: ${{ secrets.MOLLIE_API_KEY_RETE }}
+          SHOPIFY_ACCESS_TOKEN_RETE: ${{ secrets.SHOPIFY_ACCESS_TOKEN_RETE }}
         run: node index.js

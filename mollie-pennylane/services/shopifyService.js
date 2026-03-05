@@ -8,12 +8,11 @@ const API_VERSION = '2026-01';
 // Préfixes de numéros de commande connus (à adapter si besoin)
 const ORDER_PREFIXES = ['LFC', 'RED', 'HET', 'MTC', 'MO', 'RETE', 'TZ', 'LVO', 'UNIV', 'HC', 'RDC', 'COCO'];
 
-function client() {
-  const storeUrl = process.env.SHOPIFY_STORE_URL; // ex: mon-filet-de-camouflage.myshopify.com
+function client(storeUrl, token) {
   return axios.create({
     baseURL: `https://${storeUrl}/admin/api/${API_VERSION}`,
     headers: {
-      'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
+      'X-Shopify-Access-Token': token,
       'Content-Type': 'application/json',
     },
     timeout: 15000,
@@ -43,9 +42,9 @@ function extractOrderName(description) {
  * Cherche une commande Shopify par son nom (ex: LFC29292).
  * Retourne { name, billingName } ou null.
  */
-async function findOrderByName(orderName) {
+async function findOrderByName(orderName, storeUrl, token) {
   try {
-    const { data } = await client().get('/orders.json', {
+    const { data } = await client(storeUrl, token).get('/orders.json', {
       params: {
         name: `#${orderName}`,
         status: 'any',
@@ -71,14 +70,14 @@ async function findOrderByName(orderName) {
  * Stratégie 1 : extraire le numéro de commande depuis la description
  * Stratégie 2 : chercher dans les commandes récentes via transaction authorization
  */
-async function resolveOrderFromPayment(molliePayment) {
+async function resolveOrderFromPayment(molliePayment, storeUrl, token) {
   const description = molliePayment.description || '';
   const mollieId = molliePayment.id;
 
   // Stratégie 1 : le numéro de commande est dans la description
   const orderName = extractOrderName(description);
   if (orderName) {
-    const order = await findOrderByName(orderName);
+    const order = await findOrderByName(orderName, storeUrl, token);
     if (order) {
       logger.info(`[Shopify] Commande trouvée via description: ${orderName} → ${order.billingName}`);
       return order;
@@ -90,7 +89,7 @@ async function resolveOrderFromPayment(molliePayment) {
   logger.info(`[Shopify] Stratégie 2 — scan des commandes récentes pour ${mollieId}`);
   try {
     const since = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-    const { data } = await client().get('/orders.json', {
+    const { data } = await client(storeUrl, token).get('/orders.json', {
       params: {
         status: 'any',
         created_at_min: since,
@@ -101,7 +100,7 @@ async function resolveOrderFromPayment(molliePayment) {
 
     for (const order of data.orders ?? []) {
       // Récupérer les transactions de la commande
-      const { data: txData } = await client().get(`/orders/${order.id}/transactions.json`, {
+      const { data: txData } = await client(storeUrl, token).get(`/orders/${order.id}/transactions.json`, {
         params: { fields: 'id,authorization,gateway' },
       });
 

@@ -2,39 +2,80 @@
 
 require('dotenv').config();
 
-const cron = require('node-cron');
 const { runMigrations } = require('./db/migrations');
 const { processMollie } = require('./jobs/processMollie');
 const logger = require('./utils/logger');
 
+// ---------------------------------------------------------------------------
+// Configuration des 7 boutiques Mollie
+// ---------------------------------------------------------------------------
+const STORES = [
+  {
+    name: 'LFC',
+    mollieKey:    process.env.MOLLIE_API_KEY_LFC,
+    shopifyUrl:   'mon-filet-de-camouflage.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_LFC,
+  },
+  {
+    name: 'HET',
+    mollieKey:    process.env.MOLLIE_API_KEY_HET,
+    shopifyUrl:   'het-camouflagenet.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_HET,
+  },
+  {
+    name: 'TAR',
+    mollieKey:    process.env.MOLLIE_API_KEY_TAR,
+    shopifyUrl:   'tarnnetz.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_TAR,
+  },
+  {
+    name: 'RED',
+    mollieKey:    process.env.MOLLIE_API_KEY_RED,
+    shopifyUrl:   'red-de-camuflaje.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_RED,
+  },
+  {
+    name: 'COCO',
+    mollieKey:    process.env.MOLLIE_API_KEY_COCO,
+    shopifyUrl:   'coconets.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_COCO,
+  },
+  {
+    name: 'LOV',
+    mollieKey:    process.env.MOLLIE_API_KEY_LOV,
+    shopifyUrl:   'le-filet-camouflage-1.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_LOV,
+  },
+  {
+    name: 'RETE',
+    mollieKey:    process.env.MOLLIE_API_KEY_RETE,
+    shopifyUrl:   'rete-mimetica.myshopify.com',
+    shopifyToken: process.env.SHOPIFY_ACCESS_TOKEN_RETE,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 async function main() {
-  // Crée la table si elle n'existe pas encore
   await runMigrations();
 
-  // --- Mode one-shot (ex: test manuel ou Render Cron Job natif) ---
-  // Si RUN_ONCE=true, on exécute une fois et on sort.
-  if (process.env.RUN_ONCE === 'true') {
-    logger.info('Mode RUN_ONCE activé — exécution unique');
-    await processMollie();
-    process.exit(0);
+  logger.info(`Mollie → PennyLane — ${STORES.length} boutiques à traiter`);
+
+  for (const store of STORES) {
+    if (!store.mollieKey || !store.shopifyToken) {
+      logger.warn(`[${store.name}] Clés manquantes — boutique ignorée`);
+      continue;
+    }
+    try {
+      await processMollie(store);
+    } catch (err) {
+      logger.error(`[${store.name}] Erreur fatale: ${err.message}`);
+    }
   }
 
-  // --- Mode cron interne (Web Service Render avec scheduler embarqué) ---
-  // Schedule : 0 1 * * *  → tous les jours à 1h00 UTC
-  const schedule = process.env.CRON_SCHEDULE ?? '0 1 * * *';
-  logger.info(`Cron planifié : "${schedule}" (UTC)`);
-
-  cron.schedule(schedule, async () => {
-    await processMollie();
-  }, { timezone: 'UTC' });
-
-  logger.info('Service démarré. En attente du prochain déclenchement...');
-
-  // Garde le process en vie (nécessaire pour le scheduler interne)
-  process.on('SIGTERM', () => {
-    logger.info('SIGTERM reçu — arrêt propre');
-    process.exit(0);
-  });
+  logger.info('Toutes les boutiques traitées.');
+  process.exit(0);
 }
 
 main().catch(err => {

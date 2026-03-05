@@ -38,7 +38,7 @@ async function saveResult({ mollieId, paymentRef, orderName, invoiceNumber, amou
 // Traitement d'un paiement individuel
 // ---------------------------------------------------------------------------
 
-async function processPayment(payment) {
+async function processPayment(payment, storeUrl, shopifyToken) {
   const mollieId   = payment.id;
   const description = payment.description ?? '';
   const amount      = parseFloat(payment.amount?.value ?? '0');
@@ -55,7 +55,7 @@ async function processPayment(payment) {
   }
 
   // 2. Résolution Shopify
-  const shopifyOrder = await shopify.resolveOrderFromPayment(payment);
+  const shopifyOrder = await shopify.resolveOrderFromPayment(payment, storeUrl, shopifyToken);
   if (!shopifyOrder) {
     await saveResult({ mollieId, paymentRef: description, amount, status: 'error' });
     return { status: 'error', reason: 'Commande Shopify introuvable' };
@@ -146,10 +146,10 @@ async function processPayment(payment) {
 // Job principal
 // ---------------------------------------------------------------------------
 
-async function processMollie() {
+async function processMollie({ name, mollieKey, shopifyUrl, shopifyToken }) {
   const startedAt = new Date();
   logger.info('========================================');
-  logger.info('Mollie → PennyLane — démarrage du job');
+  logger.info(`Mollie → PennyLane — [${name}] démarrage du job`);
   logger.info(`Fenêtre : ${WINDOW_HOURS}h | Mode test : ${process.env.MODE_TEST === 'true' ? 'OUI' : 'NON'}`);
   logger.info('========================================');
 
@@ -158,7 +158,7 @@ async function processMollie() {
   let totalSkipped = 0;
 
   try {
-    const settlements = await mollie.getRecentSettlements(WINDOW_HOURS);
+    const settlements = await mollie.getRecentSettlements(WINDOW_HOURS, mollieKey);
 
     if (settlements.length === 0) {
       logger.info('Aucun settlement paidout dans les dernières 48h.');
@@ -170,7 +170,7 @@ async function processMollie() {
 
       let payments;
       try {
-        payments = await mollie.getSettlementPayments(settlement.id);
+        payments = await mollie.getSettlementPayments(settlement.id, mollieKey);
       } catch (err) {
         logger.error(`Erreur récupération paiements du settlement ${settlement.id}: ${err.message}`);
         totalError++;
@@ -179,7 +179,7 @@ async function processMollie() {
 
       for (const payment of payments) {
         try {
-          const result = await processPayment(payment);
+          const result = await processPayment(payment, shopifyUrl, shopifyToken);
           if      (result.status === 'success') totalSuccess++;
           else if (result.status === 'skipped') totalSkipped++;
           else                                  totalError++;

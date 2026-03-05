@@ -5,11 +5,11 @@ const logger = require('../utils/logger');
 
 const BASE = 'https://api.mollie.com/v2';
 
-function client() {
+function client(apiKey) {
   return axios.create({
     baseURL: BASE,
     headers: {
-      Authorization: `Bearer ${process.env.MOLLIE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     timeout: 15000,
@@ -21,13 +21,13 @@ function client() {
  * Mollie ne permet pas de filtrer par date via query param sur /settlements,
  * on pagine et on s'arrête quand settledAt sort de la fenêtre.
  */
-async function getRecentSettlements(windowHours = 48) {
+async function getRecentSettlements(windowHours = 48, apiKey) {
   const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   const settlements = [];
   let url = '/settlements?limit=50';
 
   while (url) {
-    const { data } = await client().get(url);
+    const { data } = await client(apiKey).get(url);
     const items = data._embedded?.settlements ?? [];
 
     let reachedOld = false;
@@ -58,12 +58,12 @@ async function getRecentSettlements(windowHours = 48) {
  * Récupère tous les paiements d'un settlement (pagination complète).
  * Seuls les paiements "paid" ou "paidout" avec amount > 0 sont retournés.
  */
-async function getSettlementPayments(settlementId) {
+async function getSettlementPayments(settlementId, apiKey) {
   const payments = [];
   let url = `/settlements/${settlementId}/payments?limit=250`;
 
   while (url) {
-    const { data } = await client().get(url);
+    const { data } = await client(apiKey).get(url);
     const items = data._embedded?.payments ?? [];
     payments.push(...items);
 
