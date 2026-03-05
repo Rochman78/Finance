@@ -932,9 +932,10 @@ if __name__ == "__main__":
     
     if args.cron:
         MODE_TEST = False
-        log.info(f"🤖 Mode CRON — traitement des nouveaux versements pour {len(STORES)} boutiques")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        log.info(f"🤖 Mode CRON — traitement des versements du {yesterday} pour {len(STORES)} boutiques")
         try:
-            run_once(store_filter=args.store)
+            run_once(target_date=yesterday, store_filter=args.store)
         except Exception as e:
             log.error(f"❌ Erreur cron: {e}", exc_info=True)
             telegram_error("Exécution CRON", str(e))
