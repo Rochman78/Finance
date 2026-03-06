@@ -1,0 +1,47 @@
+name: Daily Shopify Report
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 6h UTC = 7h Paris (winter) / 8h Paris (summer)
+  workflow_dispatch:        # manual trigger for testing
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run daily report
+        run: node jobs/dailyReport.js
+        env:
+          # Shopify stores
+          SHOPIFY_LFC_URL:   ${{ secrets.SHOPIFY_LFC_URL }}
+          SHOPIFY_LFC_TOKEN: ${{ secrets.SHOPIFY_LFC_TOKEN }}
+          SHOPIFY_LVO_URL:   ${{ secrets.SHOPIFY_LVO_URL }}
+          SHOPIFY_LVO_TOKEN: ${{ secrets.SHOPIFY_LVO_TOKEN }}
+          SHOPIFY_UNI_URL:   ${{ secrets.SHOPIFY_UNI_URL }}
+          SHOPIFY_UNI_TOKEN: ${{ secrets.SHOPIFY_UNI_TOKEN }}
+          SHOPIFY_TAR_URL:   ${{ secrets.SHOPIFY_TAR_URL }}
+          SHOPIFY_TAR_TOKEN: ${{ secrets.SHOPIFY_TAR_TOKEN }}
+          SHOPIFY_HET_URL:   ${{ secrets.SHOPIFY_HET_URL }}
+          SHOPIFY_HET_TOKEN: ${{ secrets.SHOPIFY_HET_TOKEN }}
+          SHOPIFY_RED_URL:   ${{ secrets.SHOPIFY_RED_URL }}
+          SHOPIFY_RED_TOKEN: ${{ secrets.SHOPIFY_RED_TOKEN }}
+          SHOPIFY_COCO_URL:   ${{ secrets.SHOPIFY_COCO_URL }}
+          SHOPIFY_COCO_TOKEN: ${{ secrets.SHOPIFY_COCO_TOKEN }}
+          SHOPIFY_MON_URL:   ${{ secrets.SHOPIFY_MON_URL }}
+          SHOPIFY_MON_TOKEN: ${{ secrets.SHOPIFY_MON_TOKEN }}
+          SHOPIFY_RETE_URL:   ${{ secrets.SHOPIFY_RETE_URL }}
+          SHOPIFY_RETE_TOKEN: ${{ secrets.SHOPIFY_RETE_TOKEN }}
+          # Google Sheets
+          GOOGLE_SHEET_ID:              ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY:           ${{ secrets.GOOGLE_PRIVATE_KEY }}

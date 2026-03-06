@@ -1,0 +1,17 @@
+{
+  "name": "shopify-sheets-daily-report",
+  "version": "1.0.0",
+  "description": "Daily Shopify revenue report → Google Sheets",
+  "main": "jobs/dailyReport.js",
+  "scripts": {
+    "start": "node jobs/dailyReport.js"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "luxon": "^3.5.0",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
