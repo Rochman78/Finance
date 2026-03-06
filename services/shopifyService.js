@@ -13,7 +13,7 @@ const fetch = require('node-fetch');
  * @returns {Promise<Array>}  - Array of order objects with total_price & total_tax
  */
 async function fetchOrdersForDay(storeUrl, token, dateMin, dateMax) {
-  const baseUrl = storeUrl.replace(/\/$/, '');
+  const baseUrl = (storeUrl.startsWith('http') ? storeUrl : `https://${storeUrl}`).replace(/\/$/, '');
   const allOrders = [];
 
   let url =
