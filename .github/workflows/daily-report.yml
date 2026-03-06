@@ -19,6 +19,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Debug secrets (premiers caractères uniquement)
+        run: |
+          echo "LFC_URL prefix:   ${SHOPIFY_LFC_URL:0:10}"
+          echo "LFC_TOKEN prefix: ${SHOPIFY_LFC_TOKEN:0:10}"
+        env:
+          SHOPIFY_LFC_URL:   ${{ secrets.SHOPIFY_LFC_URL }}
+          SHOPIFY_LFC_TOKEN: ${{ secrets.SHOPIFY_LFC_TOKEN }}
+
       - name: Run daily report
         run: node jobs/dailyReport.js
         env:
