@@ -100,7 +100,7 @@ def fetch_ca_ht(store, date_min_iso, date_max_iso):
             f"?status=any&financial_status=paid"
             f"&created_at_min={requests.utils.quote(date_min_iso)}"
             f"&created_at_max={requests.utils.quote(date_max_iso)}"
-            f"&fields=total_price,total_tax&limit=250"
+            f"&fields=total_price,total_tax,total_discounts&limit=250"
         )
 
         while url:
@@ -116,11 +116,7 @@ def fetch_ca_ht(store, date_min_iso, date_max_iso):
             m = re.search(r'<([^>]+)>;\s*rel="next"', link)
             url = m.group(1) if m else None
 
-        ca_ht = sum(
-            float(o["total_price"]) - float(o["total_tax"])
-            for o in all_orders
-        )
-        ca_ht = round(ca_ht, 2)
+        ca_ht = round(sum(float(o["total_price"]) - float(o["total_tax"]) - float(o.get("total_discounts", 0)) for o in all_orders), 2)
         log.info(f"[{store['name']}] {len(all_orders)} commande(s) → CA HT = {ca_ht}")
         return ca_ht
 
