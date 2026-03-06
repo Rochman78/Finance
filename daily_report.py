@@ -97,7 +97,7 @@ def fetch_ca_ht(store, date_min_iso, date_max_iso):
         all_orders = []
         url = (
             f"https://{store['store']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
-            f"?status=any&financial_status=paid"
+            f"?status=any&financial_status=any"
             f"&created_at_min={requests.utils.quote(date_min_iso)}"
             f"&created_at_max={requests.utils.quote(date_max_iso)}"
             f"&fields=total_price,total_tax&limit=250"
