@@ -654,9 +654,16 @@ def process_payout(shopify, pennylane, payout):
         amount = float(txn.get("amount", "0"))
         fee = abs(float(txn.get("fee", "0")))
 
+        # Normaliser le type (ex: "Payments::Refund" → "refund")
+        source_type_lower = source_type.lower()
+        is_charge = source_type_lower == "charge"
+        is_refund = "refund" in source_type_lower
+        is_dispute = "dispute" in source_type_lower
+        txn_label = source_type_lower.split("::")[-1].upper()  # "REFUND" ou "DISPUTE"
+
         # Traiter charges (ventes), refunds et disputes — ignorer le reste
-        if source_type not in ("charge", "refund", "dispute") or not source_order_id:
-            if source_type == "payout":
+        if not (is_charge or is_refund or is_dispute) or not source_order_id:
+            if "payout" in source_type_lower:
                 continue
             if amount != 0 or fee != 0:
                 log.info(f"   ℹ️  Transaction {source_type} ignorée (montant: {amount}, fee: {fee})")
@@ -692,7 +699,7 @@ def process_payout(shopify, pennylane, payout):
 
         gross_amount = abs(amount)
 
-        if source_type == "charge":
+        if is_charge:
             # Vente normale : crédit compte auxiliaire client
             total_gross += gross_amount
             total_fees += fee
@@ -716,13 +723,13 @@ def process_payout(shopify, pennylane, payout):
         else:
             # Remboursement ou dispute : débit compte auxiliaire client (sens inverse)
             total_gross -= gross_amount
-            log.info(f"   ↩️  [{source_type.upper()}] {order_name} → {customer_name} | Montant: -{gross_amount}€")
-            client_details.append(f"[{source_type.upper()}] {customer_name} — -{gross_amount:.2f}€")
+            log.info(f"   ↩️  [{txn_label}] {order_name} → {customer_name} | Montant: -{gross_amount}€")
+            client_details.append(f"[{txn_label}] {customer_name} — -{gross_amount:.2f}€")
             entry_lines.append({
                 "ledger_account_id": ledger_account_id,
                 "debit": f"{gross_amount:.2f}",
                 "credit": "0.00",
-                "label": f"[{source_type.upper()}] {customer_name} - {order_name}"
+                "label": f"[{txn_label}] {customer_name} - {order_name}"
             })
 
     if not entry_lines:
