@@ -121,9 +121,6 @@ def telegram_error(context, error_msg):
     telegram_send(msg)
 
 # =============================================================
-# FICHIER DE SUIVI
-# =============================================================
-# =============================================================
 # BASE DE DONNÉES PostgreSQL — Cache + Processed Payouts
 # =============================================================
 
@@ -464,9 +461,7 @@ class PennylaneClient:
     # --- COMPTES COMPTABLES ---
     
     def get_account_id(self, account_number):
-        """Retrouve l'ID d'un compte à partir de son numéro via l'API filter.
-        Les comptes auxiliaires et personnalisés ne sont pas dans le listing
-        général, mais sont trouvables via le filtre par numéro."""
+        """Retrouve l'ID d'un compte à partir de son numéro via l'API filter."""
         if account_number in self._accounts_cache:
             return self._accounts_cache[account_number]
         
@@ -488,16 +483,13 @@ class PennylaneClient:
         Construit un index : numéro de commande Shopify → infos facture
         Si un cache est fourni, ne charge que les nouvelles factures.
         """
-        # Si le cache a déjà des données, chargement incrémental
         if cache and cache.get_invoice_count() > 0:
             last_sync = cache.get_last_sync("invoices")
             log.info(f"📋 Sync incrémental des factures (depuis {last_sync or 'jamais'})...")
             
-            # Charger le cache existant
             index = cache.load_invoices()
             log.info(f"   → {len(index)} facture(s) en cache")
             
-            # Récupérer les factures du mois en cours et du mois précédent
             today = datetime.now()
             first_of_last_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
             date_from = first_of_last_month.strftime("%Y-%m-%d")
@@ -524,7 +516,6 @@ class PennylaneClient:
                 cache.upsert_invoices(new_index)
             cache.set_last_sync("invoices", datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
         else:
-            # Premier chargement complet
             log.info("📋 Premier chargement des factures Pennylane (sera mis en cache)...")
             all_invoices = self._get_all_pages("customer_invoices", per_page=100)
             log.info(f"   → {len(all_invoices)} facture(s) récupérée(s) au total")
@@ -551,18 +542,11 @@ class PennylaneClient:
         return index
     
     def _extract_customer_name(self, label):
-        """
-        Extrait le nom client depuis le label de la facture Pennylane.
-        Format: "Facture leonard antony - F-2026-02-26-8987 (label généré)"
-        """
         if not label:
             return "Inconnu"
-        
-        # Pattern: "Facture NOM CLIENT - F-..." ou "Avoir NOM CLIENT - F-..."
         match = re.search(r'(?:Facture|Avoir)\s+(.+?)\s+-\s+F-', label)
         if match:
             return match.group(1).strip()
-        
         return "Inconnu"
     
     def _extract_order_number(self, label, special_mention):
@@ -579,32 +563,57 @@ class PennylaneClient:
         for text in [special_mention, label]:
             if not text:
                 continue
-            
-            # Pattern principal : "Commande #LFC29346" ou "Commande LFC29346"
             match = re.search(r'Commande\s+#?([A-Za-z]{2,5}\d{3,6})', text)
             if match:
                 return match.group(1).upper()
-            
-            # Fallback : lettres + chiffres (min 3 chiffres)
             matches = re.findall(r'[A-Z]{2,5}\d{3,6}', text.upper())
             for m in matches:
                 digits = re.search(r'\d+', m).group()
                 if len(digits) >= 3:
                     return m
-        
         return None
     
     # --- CLIENTS ---
     
     def get_customers(self, cache=None):
-        """Récupère les clients avec leurs comptes auxiliaires, avec cache SQLite"""
+        """
+        Récupère les clients avec leurs comptes auxiliaires.
+        FIX : re-synchronise depuis l'API Pennylane les clients
+        dont ledger_account_id est NULL dans le cache.
+        """
         if self._customers_cache is not None:
             return self._customers_cache
-        
+
         if cache and cache.get_customer_count() > 0:
             log.info("👥 Chargement des clients depuis le cache...")
             customers = cache.load_customers()
             log.info(f"   → {len(customers)} client(s) en cache")
+
+            # ✅ FIX : re-sync des clients sans compte auxiliaire
+            missing_ids = [cid for cid, info in customers.items() if not info.get("ledger_account_id")]
+            if missing_ids:
+                log.info(f"   🔄 Re-sync depuis Pennylane pour {len(missing_ids)} client(s) sans compte auxiliaire...")
+                all_customers_api = self._get_all_pages("customers", per_page=100)
+                refreshed = {}
+                for c in all_customers_api:
+                    cid = c.get("id")
+                    if cid in missing_ids:
+                        ledger_account = c.get("ledger_account", {})
+                        ledger_account_id = ledger_account.get("id") if ledger_account else None
+                        refreshed[cid] = {
+                            "name": c.get("name", ""),
+                            "ledger_account_id": ledger_account_id,
+                        }
+                        customers[cid] = refreshed[cid]
+                
+                recovered = sum(1 for v in refreshed.values() if v.get("ledger_account_id"))
+                log.info(f"   → {recovered}/{len(missing_ids)} compte(s) auxiliaire(s) récupéré(s)")
+                
+                if refreshed and cache:
+                    cache.upsert_customers(refreshed)
+            else:
+                log.info("   ✅ Tous les clients ont un compte auxiliaire en cache")
+
         else:
             log.info("👥 Premier chargement des clients Pennylane (sera mis en cache)...")
             all_customers = self._get_all_pages("customers", per_page=100)
@@ -622,7 +631,7 @@ class PennylaneClient:
             if cache:
                 cache.upsert_customers(customers)
                 cache.set_last_sync("customers", datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
-        
+
         log.info(f"   → {len(customers)} client(s) au total")
         self._customers_cache = customers
         return customers
@@ -677,7 +686,7 @@ def process_payout(shopify, pennylane, payout):
     entry_lines = []
     total_gross = 0.0
     total_fees = 0.0
-    client_details = []  # Pour notification Telegram
+    client_details = []
     
     for txn in transactions:
         source_type = txn.get("source_type", "")
@@ -704,17 +713,14 @@ def process_payout(shopify, pennylane, payout):
             log.warning(f"   ⚠️  Commande {order_name} non trouvée dans les factures Pennylane")
             continue
         
-        # Nom client : d'abord depuis le cache clients, sinon depuis la facture
         customer_id = invoice_info.get("customer_id")
         customer_name = invoice_info.get("customer_name", "Client inconnu")
         
-        # Si on a le client dans le cache Pennylane, on prend son nom (plus fiable)
         if customer_id and customer_id in customers:
             cached_name = customers[customer_id].get("name")
             if cached_name:
                 customer_name = cached_name
         
-        # Récupère l'ID du compte comptable client
         ledger_account_id = None
         if customer_id and customer_id in customers:
             ledger_account_id = customers[customer_id].get("ledger_account_id")
@@ -797,7 +803,6 @@ def run_once(target_date=None, store_filter=None):
     log.info(f"\U0001f504 Verification des versements \u2014 {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     log.info(f"{'#'*60}")
     
-    # Init DB (crée les tables si besoin)
     init_db()
     
     cache = LocalCache()
@@ -810,7 +815,6 @@ def run_once(target_date=None, store_filter=None):
             log.error(f"Boutique '{store_filter}' non trouvee")
             return
     
-    # Charger factures/clients une seule fois
     pennylane.build_invoice_index(cache=cache)
     pennylane.get_customers(cache=cache)
     cache.close()
@@ -883,7 +887,7 @@ def start_health_server():
             self.end_headers()
             self.wfile.write(b"OK")
         def log_message(self, *args):
-            pass  # Silence les logs HTTP
+            pass
 
     server = HTTPServer(("0.0.0.0", port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -932,10 +936,9 @@ if __name__ == "__main__":
     
     if args.cron:
         MODE_TEST = False
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        log.info(f"🤖 Mode CRON — traitement des versements du {yesterday} pour {len(STORES)} boutiques")
+        log.info(f"🤖 Mode CRON — traitement des versements du {(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')} pour {len(STORES)} boutiques")
         try:
-            run_once(target_date=yesterday, store_filter=args.store)
+            run_once(store_filter=args.store)
         except Exception as e:
             log.error(f"❌ Erreur cron: {e}", exc_info=True)
             telegram_error("Exécution CRON", str(e))
