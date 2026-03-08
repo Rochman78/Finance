@@ -632,6 +632,33 @@ class PennylaneClient:
                 cache.upsert_customers(customers)
                 cache.set_last_sync("customers", datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
 
+      # ✅ FIX 2 : sync des customer_id présents dans les factures mais absents du cache
+if cache:
+    with cache.conn.cursor() as cur:
+        cur.execute("""
+            SELECT DISTINCT customer_id FROM invoices
+            WHERE customer_id IS NOT NULL
+            AND customer_id NOT IN (SELECT id FROM customers)
+        """)
+        missing_from_cache = [row[0] for row in cur.fetchall()]
+    
+    if missing_from_cache:
+        log.info(f"   🔄 {len(missing_from_cache)} client(s) dans les factures mais absents du cache — sync depuis Pennylane...")
+        all_customers_api = self._get_all_pages("customers", per_page=100)
+        new_customers = {}
+        for c in all_customers_api:
+            cid = c.get("id")
+            if cid in missing_from_cache:
+                ledger_account = c.get("ledger_account", {})
+                new_customers[cid] = {
+                    "name": c.get("name", ""),
+                    "ledger_account_id": ledger_account.get("id") if ledger_account else None,
+                }
+                customers[cid] = new_customers[cid]
+        log.info(f"   → {len(new_customers)} nouveau(x) client(s) ajouté(s) au cache")
+        if new_customers:
+            cache.upsert_customers(new_customers)
+
         log.info(f"   → {len(customers)} client(s) au total")
         self._customers_cache = customers
         return customers
