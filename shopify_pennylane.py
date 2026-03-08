@@ -654,7 +654,8 @@ def process_payout(shopify, pennylane, payout):
         amount = float(txn.get("amount", "0"))
         fee = abs(float(txn.get("fee", "0")))
 
-        if source_type != "charge" or not source_order_id:
+        # Traiter charges (ventes), refunds et disputes — ignorer le reste
+        if source_type not in ("charge", "refund", "dispute") or not source_order_id:
             if source_type == "payout":
                 continue
             if amount != 0 or fee != 0:
@@ -690,42 +691,62 @@ def process_payout(shopify, pennylane, payout):
             continue
 
         gross_amount = abs(amount)
-        total_gross += gross_amount
-        total_fees += fee
 
-        log.info(f"   ✅ {order_name} → {customer_name} | Brut: {gross_amount}€ | Frais: {fee}€")
-        client_details.append(f"{customer_name} — {gross_amount:.2f}€")
-
-        entry_lines.append({
-            "ledger_account_id": ledger_account_id,
-            "debit": "0.00",
-            "credit": f"{gross_amount:.2f}",
-            "label": f"{customer_name} - {order_name}"
-        })
-
-        if fee > 0:
-            fee_account_id = pennylane.get_account_id(COMPTE_FRAIS)
-            if fee_account_id:
-                entry_lines.append({
-                    "ledger_account_id": fee_account_id,
-                    "debit": f"{fee:.2f}",
-                    "credit": "0.00",
-                    "label": f"{customer_name} - {order_name}"
-                })
+        if source_type == "charge":
+            # Vente normale : crédit compte auxiliaire client
+            total_gross += gross_amount
+            total_fees += fee
+            log.info(f"   ✅ {order_name} → {customer_name} | Brut: {gross_amount}€ | Frais: {fee}€")
+            client_details.append(f"{customer_name} — {gross_amount:.2f}€")
+            entry_lines.append({
+                "ledger_account_id": ledger_account_id,
+                "debit": "0.00",
+                "credit": f"{gross_amount:.2f}",
+                "label": f"{customer_name} - {order_name}"
+            })
+            if fee > 0:
+                fee_account_id = pennylane.get_account_id(COMPTE_FRAIS)
+                if fee_account_id:
+                    entry_lines.append({
+                        "ledger_account_id": fee_account_id,
+                        "debit": f"{fee:.2f}",
+                        "credit": "0.00",
+                        "label": f"{customer_name} - {order_name}"
+                    })
+        else:
+            # Remboursement ou dispute : débit compte auxiliaire client (sens inverse)
+            total_gross -= gross_amount
+            log.info(f"   ↩️  [{source_type.upper()}] {order_name} → {customer_name} | Montant: -{gross_amount}€")
+            client_details.append(f"[{source_type.upper()}] {customer_name} — -{gross_amount:.2f}€")
+            entry_lines.append({
+                "ledger_account_id": ledger_account_id,
+                "debit": f"{gross_amount:.2f}",
+                "credit": "0.00",
+                "label": f"[{source_type.upper()}] {customer_name} - {order_name}"
+            })
 
     if not entry_lines:
         log.warning(f"⚠️  Aucune ligne d'écriture générée pour le versement {payout_id}")
         return {"success": False, "error": "Aucune ligne d'écriture générée"}
 
+    # Ligne trésorerie : débit si net positif, crédit si net négatif (remboursements)
     net_amount = total_gross - total_fees
     tresorerie_account_id = pennylane.get_account_id(COMPTE_TRESORERIE)
     if tresorerie_account_id:
-        entry_lines.insert(0, {
-            "ledger_account_id": tresorerie_account_id,
-            "debit": f"{net_amount:.2f}",
-            "credit": "0.00",
-            "label": f"Cumul versement {COMPTE_TRESORERIE}"
-        })
+        if net_amount >= 0:
+            entry_lines.insert(0, {
+                "ledger_account_id": tresorerie_account_id,
+                "debit": f"{net_amount:.2f}",
+                "credit": "0.00",
+                "label": f"Cumul versement {COMPTE_TRESORERIE}"
+            })
+        else:
+            entry_lines.insert(0, {
+                "ledger_account_id": tresorerie_account_id,
+                "debit": "0.00",
+                "credit": f"{abs(net_amount):.2f}",
+                "label": f"Cumul remboursements {COMPTE_TRESORERIE}"
+            })
 
     total_debit = sum(float(l["debit"]) for l in entry_lines)
     total_credit = sum(float(l["credit"]) for l in entry_lines)
