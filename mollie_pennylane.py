@@ -3,6 +3,10 @@
 =============================================================
 MOLLIE → PENNYLANE — Automatisation des écritures comptables
 =============================================================
+Match Mollie → commande via table shopify_orders (PostgreSQL).
+Zéro appel Shopify en temps réel.
+
+Prérequis : sync_shopify_orders.py doit avoir été exécuté au moins une fois.
 """
 
 import requests
@@ -20,54 +24,19 @@ import psycopg2
 # =============================================================
 
 MOLLIE_BASE_URL = "https://api.mollie.com/v2"
-SHOPIFY_API_VERSION = "2026-01"
-
 MOLLIE_OAUTH_TOKEN = os.environ.get("MOLLIE_OAUTH_TOKEN", "")
 
 STORES = [
-    {
-        "name": "LFC",
-        "shopify_url": "mon-filet-de-camouflage.myshopify.com",
-        "shopify_client_id": "16d136da2babe857d91f3814b57c6028",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_LFC", ""),
-    },
-    {
-        "name": "HET",
-        "shopify_url": "het-camouflagenet.myshopify.com",
-        "shopify_client_id": "ef87e54b80cd6af36446f660da1ce7ce",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_HET", ""),
-    },
-    {
-        "name": "TAR",
-        "shopify_url": "tarnnetz.myshopify.com",
-        "shopify_client_id": "e6627287d6a9eb12b54344321ec337f1",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_TZ", ""),
-    },
-    {
-        "name": "RED",
-        "shopify_url": "red-de-camuflaje.myshopify.com",
-        "shopify_client_id": "9ea1ae211e98a704b12c0c6269006fdf",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_RED", ""),
-    },
-    {
-        "name": "COCO",
-        "shopify_url": "coconets.myshopify.com",
-        "shopify_client_id": "ff7163cadd5f10752d05dd2b504b95cf",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_MTC", ""),
-    },
-    {
-        "name": "LOV",
-        "shopify_url": "le-filet-camouflage-1.myshopify.com",
-        "shopify_client_id": "d7a49b87859af74774aaa7c39d212a27",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_LVO", ""),
-    },
-    {
-        "name": "RETE",
-        "shopify_url": "rete-mimetica.myshopify.com",
-        "shopify_client_id": "c948511fe38f27931b77caf611f53d06",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_RETE", ""),
-    },
+    {"name": "LFC",  "shopify_url": "mon-filet-de-camouflage.myshopify.com"},
+    {"name": "HET",  "shopify_url": "het-camouflagenet.myshopify.com"},
+    {"name": "TAR",  "shopify_url": "tarnnetz.myshopify.com"},
+    {"name": "RED",  "shopify_url": "red-de-camuflaje.myshopify.com"},
+    {"name": "COCO", "shopify_url": "coconets.myshopify.com"},
+    {"name": "LOV",  "shopify_url": "le-filet-camouflage-1.myshopify.com"},
+    {"name": "RETE", "shopify_url": "rete-mimetica.myshopify.com"},
 ]
+
+DOMAIN_TO_STORE = {s["shopify_url"]: s["name"] for s in STORES}
 
 # --- PENNYLANE ---
 PENNYLANE_TOKEN = os.environ.get("PENNYLANE_TOKEN", "")
@@ -175,6 +144,22 @@ def save_result(mollie_id, store_name, payment_ref=None, order_name=None,
     finally:
         conn.close()
 
+def lookup_order_by_payment_id(shopify_payment_id):
+    """Cherche la commande dans le cache DB via le payment_id Shopify."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT order_name, store_name, billing_name FROM shopify_orders WHERE payment_id = %s",
+                (shopify_payment_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                return {"order_name": row[0], "store_name": row[1], "billing_name": row[2]}
+            return None
+    finally:
+        conn.close()
+
 # =============================================================
 # MOLLIE API
 # =============================================================
@@ -206,10 +191,8 @@ def get_recent_settlements(window_hours, api_key):
         data = mollie_get(path, api_key)
         if not data:
             break
-
         items = (data.get("_embedded") or {}).get("settlements", [])
         reached_old = False
-
         for s in items:
             if s.get("status") != "paidout":
                 continue
@@ -218,10 +201,8 @@ def get_recent_settlements(window_hours, api_key):
                 reached_old = True
                 break
             settlements.append(s)
-
         if reached_old:
             break
-
         next_link = ((data.get("_links") or {}).get("next") or {}).get("href")
         if not next_link:
             break
@@ -240,10 +221,8 @@ def get_settlement_payments(settlement_id, api_key):
         data = mollie_get(path, api_key)
         if not data:
             break
-
         items = (data.get("_embedded") or {}).get("payments", [])
         payments.extend(items)
-
         next_link = ((data.get("_links") or {}).get("next") or {}).get("href")
         if not next_link:
             break
@@ -260,127 +239,28 @@ def get_settlement_payments(settlement_id, api_key):
     return real
 
 # =============================================================
-# SHOPIFY — OAuth + Résolution de commande
+# RÉSOLUTION COMMANDE via DB
 # =============================================================
-ORDER_PREFIXES = ["LFC", "RED", "HET", "MTC", "MO", "RETE", "TZ", "LVO", "UNIV", "HC", "RDC", "COCO"]
-
-# Cache des tokens OAuth Shopify
-_shopify_token_cache = {}
-
-def get_shopify_access_token(store_url, client_id, client_secret):
-    """Obtient un access token OAuth via client_credentials, avec cache."""
-    cached = _shopify_token_cache.get(store_url)
-    if cached and cached["expires_at"] > time.time() + 60:
-        return cached["token"]
-
-    resp = requests.post(
-        f"https://{store_url}/admin/oauth/access_token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=15,
-    )
-    if resp.status_code != 200:
-        log.error(f"[Shopify] Auth OAuth echouee pour {store_url}: {resp.status_code} - {resp.text}")
-        return None
-
-    data = resp.json()
-    token = data["access_token"]
-    expires_in = data.get("expires_in", 86399)
-    _shopify_token_cache[store_url] = {"token": token, "expires_at": time.time() + expires_in}
-    log.info(f"[Shopify] Token OAuth obtenu pour {store_url}")
-    return token
-
-def extract_order_name(description):
-    if not description:
-        return None
-    pattern = r"#?(" + "|".join(ORDER_PREFIXES) + r")(\d{3,6})"
-    match = re.search(pattern, description, re.IGNORECASE)
-    if match:
-        return f"{match.group(1).upper()}{match.group(2)}"
-    return None
-
-def shopify_get(endpoint, store_url, client_id, client_secret, params=None):
-    """Appel API Shopify avec OAuth automatique."""
-    token = get_shopify_access_token(store_url, client_id, client_secret)
-    if not token:
-        return None
-
-    url = f"https://{store_url}/admin/api/{SHOPIFY_API_VERSION}/{endpoint}"
-    resp = requests.get(
-        url,
-        headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"},
-        params=params,
-        timeout=15,
-    )
-    if resp.status_code == 200:
-        return resp.json()
-    log.warning(f"[Shopify] GET {endpoint}: {resp.status_code}")
-    return None
-
-def find_order_by_name(order_name, store_url, client_id, client_secret):
-    data = shopify_get(
-        "orders.json",
-        store_url,
-        client_id,
-        client_secret,
-        params={"name": f"#{order_name}", "status": "any", "fields": "id,name,billing_address", "limit": 5},
-    )
-    if not data:
-        return None
-    orders = data.get("orders", [])
-    if not orders:
-        return None
-    order = orders[0]
-    billing = order.get("billing_address") or {}
-    billing_name = billing.get("company") or billing.get("name") or "Client inconnu"
-    return {"name": order_name, "billing_name": billing_name}
-
-def resolve_order_from_payment(mollie_payment, store):
-    store_url = store["shopify_url"]
-    client_id = store["shopify_client_id"]
-    client_secret = store["shopify_token"]
-    description = mollie_payment.get("description", "")
+def resolve_order_from_payment(mollie_payment):
+    """
+    Résout la commande Shopify depuis le cache DB.
+    Utilise metadata.shopify_payment_id = shopify_orders.payment_id
+    """
     mollie_id = mollie_payment.get("id", "")
+    metadata = mollie_payment.get("metadata") or {}
+    shopify_payment_id = metadata.get("shopify_payment_id")
 
-    order_name = extract_order_name(description)
-    if order_name:
-        order = find_order_by_name(order_name, store_url, client_id, client_secret)
-        if order:
-            log.info(f"  [Shopify] Commande trouvee via description: {order_name} -> {order['billing_name']}")
-            return order
+    if not shopify_payment_id:
+        log.warning(f"  [DB] Pas de shopify_payment_id dans metadata pour {mollie_id}")
+        return None
 
-    log.info(f"  [Shopify] Strategie 2 - scan des commandes recentes pour {mollie_id}")
-    since = (datetime.utcnow() - timedelta(hours=72)).isoformat() + "Z"
-    data = shopify_get(
-        "orders.json",
-        store_url,
-        client_id,
-        client_secret,
-        params={"status": "any", "created_at_min": since, "fields": "id,name,billing_address", "limit": 250},
-    )
-    if data:
-        for order in data.get("orders", []):
-            tx_data = shopify_get(
-                f"orders/{order['id']}/transactions.json",
-                store_url,
-                client_id,
-                client_secret,
-                params={"fields": "id,authorization,gateway"},
-            )
-            if tx_data:
-                for tx in tx_data.get("transactions", []):
-                    if tx.get("authorization") in (mollie_id, description):
-                        billing = order.get("billing_address") or {}
-                        billing_name = billing.get("company") or billing.get("name") or "Client inconnu"
-                        name = order.get("name", "").replace("#", "")
-                        log.info(f"  [Shopify] Commande trouvee via transaction: {name} -> {billing_name}")
-                        return {"name": name, "billing_name": billing_name}
+    order = lookup_order_by_payment_id(shopify_payment_id)
+    if order:
+        log.info(f"  [DB] Commande trouvee: {order['order_name']} ({order['store_name']}) -> {order['billing_name']}")
+        return order
 
-    log.warning(f"  [Shopify] Aucune commande trouvee pour description=\"{description}\" (mollieId={mollie_id})")
+    log.warning(f"  [DB] Aucune commande pour shopify_payment_id={shopify_payment_id} (mollie={mollie_id})")
+    log.warning(f"       → Relancer sync_shopify_orders.py si la commande est récente")
     return None
 
 # =============================================================
@@ -424,7 +304,6 @@ def pennylane_post(endpoint, payload):
 def get_account_id(account_number):
     if account_number in _pl_cache["accounts"]:
         return _pl_cache["accounts"][account_number]
-
     filter_param = json.dumps([{"field": "number", "operator": "eq", "value": account_number}])
     data = pennylane_get("ledger_accounts", {"filter": filter_param, "per_page": 5})
     if not data:
@@ -440,7 +319,6 @@ def get_journal_id(code):
     if _pl_cache["journals"] is None:
         data = pennylane_get("journals", {"per_page": 100})
         _pl_cache["journals"] = data.get("items", []) if data else []
-
     for j in _pl_cache["journals"]:
         if (j.get("code") or "").upper() == code.upper():
             return j["id"]
@@ -457,20 +335,18 @@ def find_invoice_by_order_name(order_name):
         if items:
             inv = items[0]
             customer = inv.get("customer") or {}
-            log.info(f"  [PennyLane] Facture trouvee (via {field}): {inv.get('invoice_number')} pour commande {order_name}")
+            log.info(f"  [PennyLane] Facture trouvee: {inv.get('invoice_number')} pour {order_name}")
             return {
                 "invoice_number": inv.get("invoice_number"),
                 "customer_id": customer.get("id") or customer.get("source_id"),
                 "customer_name": customer.get("name", "Client inconnu"),
             }
-
-    log.warning(f"  [PennyLane] Aucune facture trouvee pour commande {order_name}")
+    log.warning(f"  [PennyLane] Aucune facture pour commande {order_name}")
     return None
 
-def get_customer_account_number(customer_id):
+def get_customer_account(customer_id):
     if customer_id in _pl_cache["customers"]:
         return _pl_cache["customers"][customer_id]
-
     data = pennylane_get(f"customers/{customer_id}")
     if not data:
         return None
@@ -518,7 +394,7 @@ def create_ledger_entry(date, label, journal_code, lines, piece=None):
         payload["reference"] = piece
 
     if MODE_TEST:
-        log.info(f"  [PennyLane] [MODE TEST] Simulation ecriture: {label} | piece={piece}")
+        log.info(f"  [PennyLane] [MODE TEST] Ecriture: {label} | piece={piece}")
         for l in resolved_lines:
             log.info(f"    -> Compte {l['ledger_account_id']}  D:{l['debit']}  C:{l['credit']}")
         return {"id": "TEST", "status": "simulated"}
@@ -549,28 +425,31 @@ def process_payment(payment, store):
         log.info("  -> Deja traite, skip")
         return "skipped"
 
-    shopify_order = resolve_order_from_payment(payment, store)
+    # Résolution via DB (zéro appel Shopify)
+    shopify_order = resolve_order_from_payment(payment)
     if not shopify_order:
-        save_result(mollie_id, store["name"], payment_ref=description, amount=amount, status="error")
+        save_result(mollie_id, store["name"], payment_ref=description, amount=amount, status="error_no_order")
         return "error"
 
-    order_name = shopify_order["name"]
+    order_name = shopify_order["order_name"]
+    billing_name = shopify_order["billing_name"]
 
+    # Recherche facture PennyLane
     invoice = find_invoice_by_order_name(order_name)
     if not invoice:
-        save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name, amount=amount, status="error")
+        save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name, amount=amount, status="error_no_invoice")
         return "error"
 
     invoice_number = invoice["invoice_number"]
     customer_id = invoice["customer_id"]
-    customer_name = invoice["customer_name"]
+    customer_name = invoice["customer_name"] or billing_name
     piece = f"{JOURNAL_CODE}-{invoice_number}"
 
     client_account_number = COMPTE_CLIENT_FALLBACK
     client_account_id = None
 
     if customer_id:
-        customer_info = get_customer_account_number(customer_id)
+        customer_info = get_customer_account(customer_id)
         if customer_info and customer_info.get("account_number"):
             client_account_number = customer_info["account_number"]
             client_account_id = customer_info.get("account_id")
@@ -581,41 +460,18 @@ def process_payment(payment, store):
     libelle = f"{customer_name} - {order_name}"
 
     lines = [
-        {
-            "account_number": COMPTE_MOLLIE,
-            "debit": settl_amt,
-            "credit": 0,
-            "label": libelle,
-        },
-        {
-            "account_number": client_account_number,
-            "account_id": client_account_id,
-            "debit": 0,
-            "credit": amount,
-            "label": libelle,
-        },
+        {"account_number": COMPTE_MOLLIE, "debit": settl_amt, "credit": 0, "label": libelle},
+        {"account_number": client_account_number, "account_id": client_account_id, "debit": 0, "credit": amount, "label": libelle},
     ]
-
     if frais > 0.001:
-        lines.append({
-            "account_number": COMPTE_FRAIS,
-            "debit": frais,
-            "credit": 0,
-            "label": libelle,
-        })
+        lines.append({"account_number": COMPTE_FRAIS, "debit": frais, "credit": 0, "label": libelle})
 
     try:
-        create_ledger_entry(
-            date=payment_date,
-            label=libelle,
-            journal_code=JOURNAL_CODE,
-            lines=lines,
-            piece=piece,
-        )
+        create_ledger_entry(date=payment_date, label=libelle, journal_code=JOURNAL_CODE, lines=lines, piece=piece)
     except Exception as e:
         log.error(f"  -> Erreur creation ecriture: {e}")
         save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name,
-                    invoice_number=invoice_number, amount=amount, status="error")
+                    invoice_number=invoice_number, amount=amount, status="error_pennylane")
         return "error"
 
     save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name,
@@ -634,9 +490,7 @@ def process_mollie_store(store):
     log.info(f"Fenetre : {WINDOW_HOURS}h | Mode test : {'OUI' if MODE_TEST else 'NON'}")
     log.info("=" * 50)
 
-    total_success = 0
-    total_error = 0
-    total_skipped = 0
+    total_success = total_error = total_skipped = 0
 
     try:
         settlements = get_recent_settlements(WINDOW_HOURS, MOLLIE_OAUTH_TOKEN)
@@ -646,11 +500,10 @@ def process_mollie_store(store):
 
         for settlement in settlements:
             log.info(f"\nSettlement {settlement['id']} | {settlement.get('amount', {}).get('value')}EUR | {settlement.get('settledAt')}")
-
             try:
                 payments = get_settlement_payments(settlement["id"], MOLLIE_OAUTH_TOKEN)
             except Exception as e:
-                log.error(f"Erreur recuperation paiements du settlement {settlement['id']}: {e}")
+                log.error(f"Erreur recuperation paiements: {e}")
                 total_error += 1
                 continue
 
@@ -667,12 +520,10 @@ def process_mollie_store(store):
                     log.error(f"Erreur inattendue sur paiement {payment.get('id')}: {e}")
                     total_error += 1
                     try:
-                        save_result(
-                            payment.get("id", "unknown"), store["name"],
-                            payment_ref=payment.get("description"),
-                            amount=float(payment.get("amount", {}).get("value", "0")),
-                            status="error",
-                        )
+                        save_result(payment.get("id", "unknown"), store["name"],
+                                    payment_ref=payment.get("description"),
+                                    amount=float(payment.get("amount", {}).get("value", "0")),
+                                    status="error")
                     except Exception:
                         pass
     except Exception as e:
@@ -685,11 +536,10 @@ def process_mollie_store(store):
     log.info(f"  Erreurs: {total_error}")
     log.info(f"  Skipped: {total_skipped}")
     log.info("=" * 50)
-
     return total_success, total_error, total_skipped
 
 # =============================================================
-# POINT D'ENTREE
+# POINT D'ENTRÉE
 # =============================================================
 def run():
     init_db()
@@ -700,13 +550,9 @@ def run():
 
     log.info(f"Mollie -> PennyLane - {len(STORES)} boutiques a traiter")
 
-    grand_total_success = 0
-    grand_total_error = 0
+    grand_total_success = grand_total_error = 0
 
     for store in STORES:
-        if not store["shopify_token"]:
-            log.warning(f"[{store['name']}] Cles manquantes - boutique ignoree")
-            continue
         try:
             success, errors, _ = process_mollie_store(store)
             grand_total_success += success
@@ -718,10 +564,7 @@ def run():
     log.info("Toutes les boutiques traitees.")
 
     if grand_total_success > 0:
-        telegram_send(
-            f"Mollie -> PennyLane : {grand_total_success} ecriture(s) creee(s), "
-            f"{grand_total_error} erreur(s)"
-        )
+        telegram_send(f"Mollie -> PennyLane : {grand_total_success} ecriture(s) creee(s), {grand_total_error} erreur(s)")
     elif grand_total_error == 0:
         telegram_send("Mollie -> PennyLane : aucun nouveau settlement a traiter")
 
