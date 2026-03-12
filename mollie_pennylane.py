@@ -47,7 +47,7 @@ JOURNAL_CODE = "ENCSP"
 COMPTE_MOLLIE = "411MOLLIE"
 COMPTE_FRAIS = "627001"
 COMPTE_CLIENT_FALLBACK = "411NA"
-WINDOW_HOURS = 48
+WINDOW_HOURS = int(os.environ.get("WINDOW_HOURS", 48))
 
 # --- BASE DE DONNÉES ---
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -326,12 +326,13 @@ def get_journal_id(code):
     return None
 
 def find_invoice_by_order_name(order_name):
-    """Lookup facture depuis la table invoices (cache DB shopify_pennylane)."""
+    """Cherche la facture dans le cache DB (table invoices)."""
     conn = get_db()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT invoice_number, customer_id, customer_name FROM invoices WHERE order_number = %s",
+                """SELECT invoice_number, customer_id, customer_name
+                   FROM invoices WHERE order_number = %s""",
                 (order_name,),
             )
             row = cur.fetchone()
@@ -340,7 +341,7 @@ def find_invoice_by_order_name(order_name):
                 return {"invoice_number": row[0], "customer_id": row[1], "customer_name": row[2]}
     finally:
         conn.close()
-    log.warning(f"  [DB] Aucune facture pour commande {order_name} - sync shopify_pennylane necessaire?")
+    log.warning(f"  [DB] Aucune facture pour commande {order_name}")
     return None
 
 def get_customer_account(customer_id):
@@ -385,12 +386,10 @@ def create_ledger_entry(date, label, journal_code, lines, piece=None):
 
     payload = {
         "date": date,
-        "label": label,
+        "label": f"{piece} | {label}" if piece else label,
         "journal_id": journal_id,
         "ledger_entry_lines": resolved_lines,
     }
-    if piece:
-        payload["reference"] = piece
 
     if MODE_TEST:
         log.info(f"  [PennyLane] [MODE TEST] Ecriture: {label} | piece={piece}")
@@ -405,78 +404,95 @@ def create_ledger_entry(date, label, journal_code, lines, piece=None):
     return data
 
 # =============================================================
-# TRAITEMENT D'UN PAIEMENT
+# RESOLUTION D'UN PAIEMENT (sans creer d'ecriture)
 # =============================================================
-def process_payment(payment, store):
+def resolve_payment(payment, store, fee_ratio=0.0):
     mollie_id = payment.get("id", "")
     description = payment.get("description", "")
     amount = float(payment.get("amount", {}).get("value", "0"))
-    settl_amt = float(
-        payment.get("settlementAmount", {}).get("value")
-        or payment.get("amount", {}).get("value", "0")
-    )
-    frais = round(amount - settl_amt, 2)
+    frais = round(amount * fee_ratio, 2)
     payment_date = (payment.get("createdAt") or "")[:10]
-
-    log.info(f"\n--- Paiement {mollie_id} | {amount}EUR (net: {settl_amt}EUR, frais: {frais}EUR)")
-
+    log.info(f"\n--- Paiement {mollie_id} | {amount}EUR (frais: {frais}EUR)")
     if is_already_processed(mollie_id):
         log.info("  -> Deja traite, skip")
-        return "skipped"
-
-    # Résolution via DB (zéro appel Shopify)
+        return {"status": "skipped", "mollie_id": mollie_id}
     shopify_order = resolve_order_from_payment(payment)
     if not shopify_order:
         save_result(mollie_id, store["name"], payment_ref=description, amount=amount, status="error_no_order")
-        return "error"
-
+        return {"status": "error", "mollie_id": mollie_id}
     order_name = shopify_order["order_name"]
     billing_name = shopify_order["billing_name"]
-
-    # Recherche facture PennyLane
     invoice = find_invoice_by_order_name(order_name)
     if not invoice:
         save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name, amount=amount, status="error_no_invoice")
-        return "error"
-
+        return {"status": "error", "mollie_id": mollie_id}
     invoice_number = invoice["invoice_number"]
     customer_id = invoice["customer_id"]
     customer_name = invoice["customer_name"] or billing_name
-    piece = f"{JOURNAL_CODE}-{invoice_number}"
-
     client_account_number = COMPTE_CLIENT_FALLBACK
     client_account_id = None
-
     if customer_id:
         customer_info = get_customer_account(customer_id)
         if customer_info and customer_info.get("account_number"):
             client_account_number = customer_info["account_number"]
             client_account_id = customer_info.get("account_id")
-
     if client_account_number == COMPTE_CLIENT_FALLBACK:
         log.warning(f"  -> Compte client introuvable pour {customer_name} - utilisation de {COMPTE_CLIENT_FALLBACK}")
+    return {
+        "status": "ok",
+        "mollie_id": mollie_id,
+        "description": description,
+        "order_name": order_name,
+        "invoice_number": invoice_number,
+        "customer_name": customer_name,
+        "customer_id": customer_id,
+        "client_account_number": client_account_number,
+        "client_account_id": client_account_id,
+        "amount": amount,
+        "frais": frais,
+        "payment_date": payment_date,
+        "store_name": store["name"],
+    }
 
-    libelle = f"{customer_name} - {order_name}"
-
-    lines = [
-        {"account_number": COMPTE_MOLLIE, "debit": settl_amt, "credit": 0, "label": libelle},
-        {"account_number": client_account_number, "account_id": client_account_id, "debit": 0, "credit": amount, "label": libelle},
-    ]
-    if frais > 0.001:
-        lines.append({"account_number": COMPTE_FRAIS, "debit": frais, "credit": 0, "label": libelle})
-
+# =============================================================
+# TRAITEMENT D'UN SETTLEMENT (1 ecriture groupee)
+# =============================================================
+def process_settlement(settlement, payments, store, fee_ratio=0.0):
+    """1 ecriture par settlement :
+       N x credit 411CLIENT (brut), N x debit 627001 (frais), 1 x debit 411MOLLIE (net).
+    """
+    settlement_net = float((settlement.get("amount") or {}).get("value", "0"))
+    settlement_date = (settlement.get("settledAt") or "")[:10]
+    resolved = [resolve_payment(p, store, fee_ratio=fee_ratio) for p in payments]
+    ok_items  = [r for r in resolved if r["status"] == "ok"]
+    err_items = [r for r in resolved if r["status"] == "error"]
+    if not ok_items and not err_items:
+        return "skipped", 0, 0
+    if not ok_items:
+        return "error", 0, len(err_items)
+    lines = []
+    pieces = []
+    for r in ok_items:
+        libelle = f"{r['customer_name']} - {r['order_name']}"
+        lines.append({"account_number": r["client_account_number"], "account_id": r["client_account_id"], "debit": 0, "credit": r["amount"], "label": libelle})
+        if r["frais"] > 0.001:
+            lines.append({"account_number": COMPTE_FRAIS, "debit": r["frais"], "credit": 0, "label": f"Frais Mollie - {r['order_name']}"})
+        pieces.append(f"{JOURNAL_CODE}-{r['invoice_number']}")
+    lines.append({"account_number": COMPTE_MOLLIE, "debit": settlement_net, "credit": 0, "label": f"Virement Mollie {settlement['id']}"})
+    piece = pieces[0] if len(pieces) == 1 else f"{JOURNAL_CODE}-{settlement['id']}"
+    label = " | ".join(f"{r['customer_name']} - {r['order_name']}" for r in ok_items)[:200]
     try:
-        create_ledger_entry(date=payment_date, label=libelle, journal_code=JOURNAL_CODE, lines=lines, piece=piece)
+        create_ledger_entry(date=settlement_date, label=label, journal_code=JOURNAL_CODE, lines=lines, piece=piece)
     except Exception as e:
-        log.error(f"  -> Erreur creation ecriture: {e}")
-        save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name,
-                    invoice_number=invoice_number, amount=amount, status="error_pennylane")
-        return "error"
-
-    save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name,
-                invoice_number=invoice_number, amount=amount, status="success")
-    log.info(f"  -> OK : {libelle} | {amount}EUR | piece={piece}")
-    return "success"
+        log.error(f"  -> Erreur creation ecriture settlement {settlement['id']}: {e}")
+        for r in ok_items:
+            save_result(r["mollie_id"], r["store_name"], payment_ref=r["description"], order_name=r["order_name"], invoice_number=r["invoice_number"], amount=r["amount"], status="error_pennylane")
+        return "error", 0, len(ok_items) + len(err_items)
+    for r in ok_items:
+        save_result(r["mollie_id"], r["store_name"], payment_ref=r["description"], order_name=r["order_name"], invoice_number=r["invoice_number"], amount=r["amount"], status="success")
+        log.info(f"  -> OK : {r['customer_name']} - {r['order_name']} | {r['amount']}EUR")
+    log.info(f"  -> Ecriture settlement {settlement['id']} : {settlement_net}EUR NET | {len(ok_items)} paiement(s) | piece={piece}")
+    return "success", len(ok_items), len(err_items)
 
 # =============================================================
 # JOB PRINCIPAL PAR BOUTIQUE
@@ -506,25 +522,22 @@ def process_mollie_store(store):
                 total_error += 1
                 continue
 
-            for payment in payments:
-                try:
-                    result = process_payment(payment, store)
-                    if result == "success":
-                        total_success += 1
-                    elif result == "skipped":
-                        total_skipped += 1
-                    else:
-                        total_error += 1
-                except Exception as e:
-                    log.error(f"Erreur inattendue sur paiement {payment.get('id')}: {e}")
-                    total_error += 1
-                    try:
-                        save_result(payment.get("id", "unknown"), store["name"],
-                                    payment_ref=payment.get("description"),
-                                    amount=float(payment.get("amount", {}).get("value", "0")),
-                                    status="error")
-                    except Exception:
-                        pass
+            # Calcul frais + ecriture groupee par settlement
+            total_brut = sum(float((p.get("amount") or {}).get("value", "0")) for p in payments)
+            settlement_net = float((settlement.get("amount") or {}).get("value", "0"))
+            fee_ratio = (total_brut - settlement_net) / total_brut if total_brut > 0 else 0.0
+            try:
+                result, n_ok, n_err = process_settlement(settlement, payments, store, fee_ratio=fee_ratio)
+                if result == "success":
+                    total_success += n_ok
+                    total_error += n_err
+                elif result == "skipped":
+                    total_skipped += len(payments)
+                else:
+                    total_error += n_err or 1
+            except Exception as e:
+                log.error(f"Erreur inattendue sur settlement {settlement.get('id')}: {e}")
+                total_error += 1
     except Exception as e:
         log.error(f"Erreur fatale du job: {e}")
 
