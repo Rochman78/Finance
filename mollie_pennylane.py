@@ -256,7 +256,7 @@ def get_settlement_payments(settlement_id, api_key):
 
     real = [
         p for p in payments
-        if float(p.get("amount", {}).get("value", "0")) > 0
+        if float((p.get("amount") or {}).get("value", "0")) > 0
         and p.get("status") in ("paid", "paidout")
     ]
     log.info(f"[Mollie] Settlement {settlement_id} : {len(real)} paiement(s) reel(s) (total brut: {len(payments)})")
