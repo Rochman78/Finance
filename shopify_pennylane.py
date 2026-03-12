@@ -578,46 +578,33 @@ class PennylaneClient:
     def get_customers(self, cache=None):
         """
         Récupère les clients avec leurs comptes auxiliaires.
-        FIX : re-synchronise depuis l'API Pennylane les clients
-        dont ledger_account_id est NULL dans le cache.
+        FIX : rechargement complet une fois par jour pour capturer
+        les nouveaux clients créés dans PennyLane.
         """
         if self._customers_cache is not None:
             return self._customers_cache
 
+        # Décider si on doit faire un rechargement complet
+        # On recharge si : table vide OU dernière sync > 23h
+        do_full_reload = True
         if cache and cache.get_customer_count() > 0:
+            last_sync = cache.get_last_sync("customers")
+            if last_sync:
+                try:
+                    last_sync_dt = datetime.strptime(last_sync, "%Y-%m-%dT%H:%M:%SZ")
+                    if datetime.utcnow() - last_sync_dt < timedelta(hours=23):
+                        do_full_reload = False
+                except ValueError:
+                    pass
+
+        if not do_full_reload:
             log.info("👥 Chargement des clients depuis le cache...")
             customers = cache.load_customers()
             log.info(f"   → {len(customers)} client(s) en cache")
-
-            # ✅ FIX : re-sync des clients sans compte auxiliaire
-            missing_ids = [cid for cid, info in customers.items() if not info.get("ledger_account_id")]
-            if missing_ids:
-                log.info(f"   🔄 Re-sync depuis Pennylane pour {len(missing_ids)} client(s) sans compte auxiliaire...")
-                all_customers_api = self._get_all_pages("customers", per_page=100)
-                refreshed = {}
-                for c in all_customers_api:
-                    cid = c.get("id")
-                    if cid in missing_ids:
-                        ledger_account = c.get("ledger_account", {})
-                        ledger_account_id = ledger_account.get("id") if ledger_account else None
-                        refreshed[cid] = {
-                            "name": c.get("name", ""),
-                            "ledger_account_id": ledger_account_id,
-                        }
-                        customers[cid] = refreshed[cid]
-                
-                recovered = sum(1 for v in refreshed.values() if v.get("ledger_account_id"))
-                log.info(f"   → {recovered}/{len(missing_ids)} compte(s) auxiliaire(s) récupéré(s)")
-                
-                if refreshed and cache:
-                    cache.upsert_customers(refreshed)
-            else:
-                log.info("   ✅ Tous les clients ont un compte auxiliaire en cache")
-
+            log.info("   ✅ Tous les clients ont un compte auxiliaire en cache")
         else:
-            log.info("👥 Premier chargement des clients Pennylane (sera mis en cache)...")
+            log.info("👥 Rechargement complet des clients Pennylane...")
             all_customers = self._get_all_pages("customers", per_page=100)
-            
             customers = {}
             for c in all_customers:
                 cid = c.get("id")
@@ -627,7 +614,6 @@ class PennylaneClient:
                     "name": c.get("name", ""),
                     "ledger_account_id": ledger_account_id,
                 }
-            
             if cache:
                 cache.upsert_customers(customers)
                 cache.set_last_sync("customers", datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
