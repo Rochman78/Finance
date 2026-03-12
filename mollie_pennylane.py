@@ -36,43 +36,43 @@ STORES = [
         "name": "LFC",
         "mollie_key": os.environ.get("MOLLIE_API_KEY_LFC", ""),
         "shopify_url": "mon-filet-de-camouflage.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_LFC", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_LFC", ""),
     },
     {
         "name": "HET",
         "mollie_key": os.environ.get("MOLLIE_API_KEY_HET", ""),
         "shopify_url": "het-camouflagenet.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_HET", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_HET", ""),
     },
     {
         "name": "TAR",
         "mollie_key": os.environ.get("MOLLIE_API_KEY_TAR", ""),
         "shopify_url": "tarnnetz.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_TAR", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_TAR", ""),
     },
     {
         "name": "RED",
         "mollie_key": os.environ.get("MOLLIE_API_KEY_RED", ""),
         "shopify_url": "red-de-camuflaje.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_RED", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_RED", ""),
     },
     {
         "name": "COCO",
         "mollie_key": os.environ.get("MOLLIE_API_KEY_COCO", ""),
         "shopify_url": "coconets.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_COCO", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_COCO", ""),
     },
     {
         "name": "LOV",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_LOV", ""),
+        "mollie_key": os.environ.get("MOLLIE_API_KEY_LVO", ""),   # Render: MOLLIE_API_KEY_LVO
         "shopify_url": "le-filet-camouflage-1.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_LOV", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_LVO", ""),  # Render: SHOPIFY_SECRET_LVO
     },
     {
         "name": "RETE",
         "mollie_key": os.environ.get("MOLLIE_API_KEY_RETE", ""),
         "shopify_url": "rete-mimetica.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_RETE", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_RETE", ""),
     },
 ]
 
@@ -232,7 +232,6 @@ def get_recent_settlements(window_hours, api_key):
         next_link = data.get("_links", {}).get("next", {}).get("href")
         if not next_link:
             break
-        # Extract path from absolute URL
         from urllib.parse import urlparse
         parsed = urlparse(next_link)
         path = parsed.path.replace("/v2", "") + ("?" + parsed.query if parsed.query else "")
@@ -259,7 +258,6 @@ def get_settlement_payments(settlement_id, api_key):
         parsed = urlparse(next_link)
         path = parsed.path.replace("/v2", "") + ("?" + parsed.query if parsed.query else "")
 
-    # Only real payments (not refunds/chargebacks)
     real = [
         p for p in payments
         if float(p.get("amount", {}).get("value", "0")) > 0
@@ -316,7 +314,6 @@ def resolve_order_from_payment(mollie_payment, store_url, token):
     description = mollie_payment.get("description", "")
     mollie_id = mollie_payment.get("id", "")
 
-    # Strategy 1: extract order name from description
     order_name = extract_order_name(description)
     if order_name:
         order = find_order_by_name(order_name, store_url, token)
@@ -324,7 +321,6 @@ def resolve_order_from_payment(mollie_payment, store_url, token):
             log.info(f"  [Shopify] Commande trouvee via description: {order_name} -> {order['billing_name']}")
             return order
 
-    # Strategy 2: scan recent orders for matching transaction
     log.info(f"  [Shopify] Strategie 2 - scan des commandes recentes pour {mollie_id}")
     since = (datetime.utcnow() - timedelta(hours=72)).isoformat() + "Z"
     data = shopify_get(
@@ -515,12 +511,10 @@ def process_payment(payment, store):
 
     log.info(f"\n--- Paiement {mollie_id} | {amount}EUR (net: {settl_amt}EUR, frais: {frais}EUR)")
 
-    # 1. Anti-doublon
     if is_already_processed(mollie_id):
         log.info("  -> Deja traite, skip")
         return "skipped"
 
-    # 2. Resolution Shopify
     shopify_order = resolve_order_from_payment(payment, store["shopify_url"], store["shopify_token"])
     if not shopify_order:
         save_result(mollie_id, store["name"], payment_ref=description, amount=amount, status="error")
@@ -528,7 +522,6 @@ def process_payment(payment, store):
 
     order_name = shopify_order["name"]
 
-    # 3. Resolution PennyLane — facture
     invoice = find_invoice_by_order_name(order_name)
     if not invoice:
         save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name, amount=amount, status="error")
@@ -539,7 +532,6 @@ def process_payment(payment, store):
     customer_name = invoice["customer_name"]
     piece = f"{JOURNAL_CODE}-{invoice_number}"
 
-    # 4. Resolution du compte auxiliaire client
     client_account_number = COMPTE_CLIENT_FALLBACK
     client_account_id = None
 
@@ -552,10 +544,8 @@ def process_payment(payment, store):
     if client_account_number == COMPTE_CLIENT_FALLBACK:
         log.warning(f"  -> Compte client introuvable pour {customer_name} - utilisation de {COMPTE_CLIENT_FALLBACK}")
 
-    # 5. Libelle
     libelle = f"{customer_name} - {order_name}"
 
-    # 6. Construction des lignes d'ecriture
     lines = [
         {
             "account_number": COMPTE_MOLLIE,
@@ -580,7 +570,6 @@ def process_payment(payment, store):
             "label": libelle,
         })
 
-    # 7. Creation de l'ecriture
     try:
         create_ledger_entry(
             date=payment_date,
@@ -595,7 +584,6 @@ def process_payment(payment, store):
                     invoice_number=invoice_number, amount=amount, status="error")
         return "error"
 
-    # 8. Marquer comme traite
     save_result(mollie_id, store["name"], payment_ref=description, order_name=order_name,
                 invoice_number=invoice_number, amount=amount, status="success")
     log.info(f"  -> OK : {libelle} | {amount}EUR | piece={piece}")
@@ -691,7 +679,6 @@ def run():
 
     log.info("Toutes les boutiques traitees.")
 
-    # Notification Telegram recap
     if grand_total_success > 0:
         telegram_send(
             f"Mollie -> PennyLane : {grand_total_success} ecriture(s) creee(s), "
