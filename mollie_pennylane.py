@@ -326,22 +326,21 @@ def get_journal_id(code):
     return None
 
 def find_invoice_by_order_name(order_name):
-    for field in ("special_mention", "label"):
-        filter_param = json.dumps([{"field": field, "operator": "contains", "value": order_name}])
-        data = pennylane_get("customer_invoices", {"filter": filter_param, "per_page": 5})
-        if not data:
-            continue
-        items = data.get("items", [])
-        if items:
-            inv = items[0]
-            customer = inv.get("customer") or {}
-            log.info(f"  [PennyLane] Facture trouvee: {inv.get('invoice_number')} pour {order_name}")
-            return {
-                "invoice_number": inv.get("invoice_number"),
-                "customer_id": customer.get("id") or customer.get("source_id"),
-                "customer_name": customer.get("name", "Client inconnu"),
-            }
-    log.warning(f"  [PennyLane] Aucune facture pour commande {order_name}")
+    """Lookup facture depuis la table invoices (cache DB shopify_pennylane)."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT invoice_number, customer_id, customer_name FROM invoices WHERE order_number = %s",
+                (order_name,),
+            )
+            row = cur.fetchone()
+            if row:
+                log.info(f"  [DB] Facture trouvee: {row[0]} pour {order_name}")
+                return {"invoice_number": row[0], "customer_id": row[1], "customer_name": row[2]}
+    finally:
+        conn.close()
+    log.warning(f"  [DB] Aucune facture pour commande {order_name} - sync shopify_pennylane necessaire?")
     return None
 
 def get_customer_account(customer_id):
