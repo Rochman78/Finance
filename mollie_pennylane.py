@@ -31,46 +31,42 @@ import psycopg2
 MOLLIE_BASE_URL = "https://api.mollie.com/v2"
 SHOPIFY_API_VERSION = "2026-01"
 
+# Token OAuth Mollie global (valable pour toutes les boutiques)
+MOLLIE_OAUTH_TOKEN = os.environ.get("MOLLIE_OAUTH_TOKEN", "")
+
 STORES = [
     {
         "name": "LFC",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_LFC", ""),
         "shopify_url": "mon-filet-de-camouflage.myshopify.com",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_LFC", ""),
     },
     {
         "name": "HET",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_HET", ""),
         "shopify_url": "het-camouflagenet.myshopify.com",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_HET", ""),
     },
     {
         "name": "TAR",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_TAR", ""),
         "shopify_url": "tarnnetz.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_TAR", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_TZ", ""),   # Render: SHOPIFY_SECRET_TZ
     },
     {
         "name": "RED",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_RED", ""),
         "shopify_url": "red-de-camuflaje.myshopify.com",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_RED", ""),
     },
     {
         "name": "COCO",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_COCO", ""),
         "shopify_url": "coconets.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_COCO", ""),
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_MTC", ""),  # Render: SHOPIFY_SECRET_MTC
     },
     {
         "name": "LOV",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_LVO", ""),   # Render: MOLLIE_API_KEY_LVO
         "shopify_url": "le-filet-camouflage-1.myshopify.com",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_LVO", ""),  # Render: SHOPIFY_SECRET_LVO
     },
     {
         "name": "RETE",
-        "mollie_key": os.environ.get("MOLLIE_API_KEY_RETE", ""),
         "shopify_url": "rete-mimetica.myshopify.com",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_RETE", ""),
     },
@@ -605,7 +601,7 @@ def process_mollie_store(store):
     total_skipped = 0
 
     try:
-        settlements = get_recent_settlements(WINDOW_HOURS, store["mollie_key"])
+        settlements = get_recent_settlements(WINDOW_HOURS, MOLLIE_OAUTH_TOKEN)
         if not settlements:
             log.info("Aucun settlement paidout dans les dernieres 48h.")
             return total_success, total_error, total_skipped
@@ -614,7 +610,7 @@ def process_mollie_store(store):
             log.info(f"\nSettlement {settlement['id']} | {settlement.get('amount', {}).get('value')}EUR | {settlement.get('settledAt')}")
 
             try:
-                payments = get_settlement_payments(settlement["id"], store["mollie_key"])
+                payments = get_settlement_payments(settlement["id"], MOLLIE_OAUTH_TOKEN)
             except Exception as e:
                 log.error(f"Erreur recuperation paiements du settlement {settlement['id']}: {e}")
                 total_error += 1
@@ -660,13 +656,17 @@ def process_mollie_store(store):
 def run():
     init_db()
 
+    if not MOLLIE_OAUTH_TOKEN:
+        log.error("MOLLIE_OAUTH_TOKEN manquant - arret")
+        return
+
     log.info(f"Mollie -> PennyLane - {len(STORES)} boutiques a traiter")
 
     grand_total_success = 0
     grand_total_error = 0
 
     for store in STORES:
-        if not store["mollie_key"] or not store["shopify_token"]:
+        if not store["shopify_token"]:
             log.warning(f"[{store['name']}] Cles manquantes - boutique ignoree")
             continue
         try:
