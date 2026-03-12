@@ -210,7 +210,7 @@ def get_recent_settlements(window_hours, api_key):
         if not data:
             break
 
-        items = data.get("_embedded", {}).get("settlements", [])
+        items = (data.get("_embedded") or {}).get("settlements", [])
         reached_old = False
 
         for s in items:
@@ -244,7 +244,7 @@ def get_settlement_payments(settlement_id, api_key):
         if not data:
             break
 
-        items = data.get("_embedded", {}).get("payments", [])
+        items = (data.get("_embedded") or {}).get("payments", [])
         payments.extend(items)
 
         next_link = data.get("_links", {}).get("next", {}).get("href")
