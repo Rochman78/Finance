@@ -3,15 +3,6 @@
 =============================================================
 MOLLIE → PENNYLANE — Automatisation des écritures comptables
 =============================================================
-Récupère les settlements Mollie (paidout, 48h), résout les
-commandes Shopify associées, puis crée les écritures dans
-PennyLane (3 lignes : 411MOLLIE débit net, client crédit brut,
-627001 débit frais).
-
-Anti-doublon via PostgreSQL (table processed_mollie_settlements).
-
-Auteur : Conversion Python du module Node.js mollie-pennylane
-Date   : Mars 2026
 """
 
 import requests
@@ -31,43 +22,49 @@ import psycopg2
 MOLLIE_BASE_URL = "https://api.mollie.com/v2"
 SHOPIFY_API_VERSION = "2026-01"
 
-# Token OAuth Mollie global (valable pour toutes les boutiques)
 MOLLIE_OAUTH_TOKEN = os.environ.get("MOLLIE_OAUTH_TOKEN", "")
 
 STORES = [
     {
         "name": "LFC",
         "shopify_url": "mon-filet-de-camouflage.myshopify.com",
+        "shopify_client_id": "16d136da2babe857d91f3814b57c6028",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_LFC", ""),
     },
     {
         "name": "HET",
         "shopify_url": "het-camouflagenet.myshopify.com",
+        "shopify_client_id": "ef87e54b80cd6af36446f660da1ce7ce",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_HET", ""),
     },
     {
         "name": "TAR",
         "shopify_url": "tarnnetz.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_TZ", ""),   # Render: SHOPIFY_SECRET_TZ
+        "shopify_client_id": "e6627287d6a9eb12b54344321ec337f1",
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_TZ", ""),
     },
     {
         "name": "RED",
         "shopify_url": "red-de-camuflaje.myshopify.com",
+        "shopify_client_id": "9ea1ae211e98a704b12c0c6269006fdf",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_RED", ""),
     },
     {
         "name": "COCO",
         "shopify_url": "coconets.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_MTC", ""),  # Render: SHOPIFY_SECRET_MTC
+        "shopify_client_id": "ff7163cadd5f10752d05dd2b504b95cf",
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_MTC", ""),
     },
     {
         "name": "LOV",
         "shopify_url": "le-filet-camouflage-1.myshopify.com",
-        "shopify_token": os.environ.get("SHOPIFY_SECRET_LVO", ""),  # Render: SHOPIFY_SECRET_LVO
+        "shopify_client_id": "d7a49b87859af74774aaa7c39d212a27",
+        "shopify_token": os.environ.get("SHOPIFY_SECRET_LVO", ""),
     },
     {
         "name": "RETE",
         "shopify_url": "rete-mimetica.myshopify.com",
+        "shopify_client_id": "c948511fe38f27931b77caf611f53d06",
         "shopify_token": os.environ.get("SHOPIFY_SECRET_RETE", ""),
     },
 ]
@@ -155,7 +152,7 @@ def is_already_processed(mollie_id):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id FROM processed_mollie_settlements WHERE mollie_id = %s",
+                "SELECT 1 FROM processed_mollie_settlements WHERE mollie_id = %s",
                 (mollie_id,),
             )
             return cur.fetchone() is not None
@@ -225,7 +222,7 @@ def get_recent_settlements(window_hours, api_key):
         if reached_old:
             break
 
-        next_link = data.get("_links", {}).get("next", {}).get("href")
+        next_link = ((data.get("_links") or {}).get("next") or {}).get("href")
         if not next_link:
             break
         from urllib.parse import urlparse
@@ -247,7 +244,7 @@ def get_settlement_payments(settlement_id, api_key):
         items = (data.get("_embedded") or {}).get("payments", [])
         payments.extend(items)
 
-        next_link = data.get("_links", {}).get("next", {}).get("href")
+        next_link = ((data.get("_links") or {}).get("next") or {}).get("href")
         if not next_link:
             break
         from urllib.parse import urlparse
@@ -263,9 +260,39 @@ def get_settlement_payments(settlement_id, api_key):
     return real
 
 # =============================================================
-# SHOPIFY — Résolution de commande
+# SHOPIFY — OAuth + Résolution de commande
 # =============================================================
 ORDER_PREFIXES = ["LFC", "RED", "HET", "MTC", "MO", "RETE", "TZ", "LVO", "UNIV", "HC", "RDC", "COCO"]
+
+# Cache des tokens OAuth Shopify
+_shopify_token_cache = {}
+
+def get_shopify_access_token(store_url, client_id, client_secret):
+    """Obtient un access token OAuth via client_credentials, avec cache."""
+    cached = _shopify_token_cache.get(store_url)
+    if cached and cached["expires_at"] > time.time() + 60:
+        return cached["token"]
+
+    resp = requests.post(
+        f"https://{store_url}/admin/oauth/access_token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        log.error(f"[Shopify] Auth OAuth echouee pour {store_url}: {resp.status_code} - {resp.text}")
+        return None
+
+    data = resp.json()
+    token = data["access_token"]
+    expires_in = data.get("expires_in", 86399)
+    _shopify_token_cache[store_url] = {"token": token, "expires_at": time.time() + expires_in}
+    log.info(f"[Shopify] Token OAuth obtenu pour {store_url}")
+    return token
 
 def extract_order_name(description):
     if not description:
@@ -276,7 +303,12 @@ def extract_order_name(description):
         return f"{match.group(1).upper()}{match.group(2)}"
     return None
 
-def shopify_get(endpoint, store_url, token, params=None):
+def shopify_get(endpoint, store_url, client_id, client_secret, params=None):
+    """Appel API Shopify avec OAuth automatique."""
+    token = get_shopify_access_token(store_url, client_id, client_secret)
+    if not token:
+        return None
+
     url = f"https://{store_url}/admin/api/{SHOPIFY_API_VERSION}/{endpoint}"
     resp = requests.get(
         url,
@@ -289,11 +321,12 @@ def shopify_get(endpoint, store_url, token, params=None):
     log.warning(f"[Shopify] GET {endpoint}: {resp.status_code}")
     return None
 
-def find_order_by_name(order_name, store_url, token):
+def find_order_by_name(order_name, store_url, client_id, client_secret):
     data = shopify_get(
         "orders.json",
         store_url,
-        token,
+        client_id,
+        client_secret,
         params={"name": f"#{order_name}", "status": "any", "fields": "id,name,billing_address", "limit": 5},
     )
     if not data:
@@ -306,13 +339,16 @@ def find_order_by_name(order_name, store_url, token):
     billing_name = billing.get("company") or billing.get("name") or "Client inconnu"
     return {"name": order_name, "billing_name": billing_name}
 
-def resolve_order_from_payment(mollie_payment, store_url, token):
+def resolve_order_from_payment(mollie_payment, store):
+    store_url = store["shopify_url"]
+    client_id = store["shopify_client_id"]
+    client_secret = store["shopify_token"]
     description = mollie_payment.get("description", "")
     mollie_id = mollie_payment.get("id", "")
 
     order_name = extract_order_name(description)
     if order_name:
-        order = find_order_by_name(order_name, store_url, token)
+        order = find_order_by_name(order_name, store_url, client_id, client_secret)
         if order:
             log.info(f"  [Shopify] Commande trouvee via description: {order_name} -> {order['billing_name']}")
             return order
@@ -322,7 +358,8 @@ def resolve_order_from_payment(mollie_payment, store_url, token):
     data = shopify_get(
         "orders.json",
         store_url,
-        token,
+        client_id,
+        client_secret,
         params={"status": "any", "created_at_min": since, "fields": "id,name,billing_address", "limit": 250},
     )
     if data:
@@ -330,7 +367,8 @@ def resolve_order_from_payment(mollie_payment, store_url, token):
             tx_data = shopify_get(
                 f"orders/{order['id']}/transactions.json",
                 store_url,
-                token,
+                client_id,
+                client_secret,
                 params={"fields": "id,authorization,gateway"},
             )
             if tx_data:
@@ -511,7 +549,7 @@ def process_payment(payment, store):
         log.info("  -> Deja traite, skip")
         return "skipped"
 
-    shopify_order = resolve_order_from_payment(payment, store["shopify_url"], store["shopify_token"])
+    shopify_order = resolve_order_from_payment(payment, store)
     if not shopify_order:
         save_result(mollie_id, store["name"], payment_ref=description, amount=amount, status="error")
         return "error"
