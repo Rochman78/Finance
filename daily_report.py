@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-CA HT J-1 par boutique Shopify → Google Sheets
-Dépenses Google Ads J-1 par boutique → même colonne
+CA HT J-1 par boutique Shopify → Google Sheets (feuille "REPORT SHOPIFY VENTES")
+Dépenses Google Ads J-1 par boutique → Google Sheets (feuille "REPORT GOOGLE ADS")
 """
 
 import os
@@ -59,16 +59,14 @@ GADS_STORES = [
     {"name": "RETE", "customer_id": "3851805990"},
 ]
 
-# Lignes Google Ads dans le sheet (voir "GOOGLE ADS" ligne 13)
-ROW_GADS_START = 14   # LFC
-ROW_GADS_END   = 22   # RETE
-ROW_GADS_TOTAL = 23   # TOTAL
-
 # =============================================================
 # CONFIG GOOGLE SHEETS
 # =============================================================
-SHEET_ID   = os.environ.get("GOOGLE_SHEET_ID", "")
-SHEET_NAME = os.environ.get("GOOGLE_SHEET_TAB", "Report auto")
+SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
+
+SHEET_SHOPIFY  = "REPORT SHOPIFY VENTES"
+SHEET_GADS     = "REPORT GOOGLE ADS"
+# SHEET_AMAZON = "REPORT AMAZON VENTES"  # à activer plus tard
 
 SERVICE_ACCOUNT_EMAIL = os.environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL", "")
 PRIVATE_KEY           = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
@@ -215,139 +213,79 @@ def col_letter(n):
     return result
 
 
-def find_date_column(sheets, date_str):
-    """Cherche date_str en ligne 1, retourne la lettre de colonne ou None."""
-    row1 = sheets.values().get(
-        spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!1:1",
-    ).execute().get("values", [[]])[0]
-
-    for i, cell in enumerate(row1):
-        if str(cell).strip() == date_str:
-            return col_letter(i)
-    return None
-
-
-# =============================================================
-# GOOGLE SHEETS — Écriture Shopify (lignes 2-11)
-# =============================================================
-
-def write_shopify_report(date_str, results_by_name):
+def write_report(sheet_name: str, date_str: str, results_by_name: dict, store_order: list):
     """
-    Crée une nouvelle colonne avec la date en ligne 1
-    et les CA HT par boutique lignes 2-10 + TOTAL ligne 11.
+    Fonction générique — écrit un rapport dans la feuille sheet_name.
+    Structure : ligne 1 = dates, colonne A = noms, dernière ligne = TOTAL.
+    Idempotente : ne réécrit pas si la date existe déjà.
     """
     svc    = get_sheets_service()
     sheets = svc.spreadsheets()
 
+    # Lecture ligne 1
     row1 = sheets.values().get(
         spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!1:1",
+        range=f"'{sheet_name}'!1:1",
     ).execute().get("values", [[]])[0]
 
+    # Cherche la colonne "Boutique" (ancre)
     anchor_col = None
     for i, cell in enumerate(row1):
         if str(cell).strip().lower() == "boutique":
             anchor_col = i
             break
 
+    # Initialise la structure si feuille vierge
     if anchor_col is None:
-        log.info("Sheet vierge → initialisation de la structure")
-        init_values = [["Boutique"]] + [[name] for name in STORE_ORDER] + [["TOTAL"]]
+        log.info(f"[{sheet_name}] Feuille vierge → initialisation")
+        init_values = [["Boutique"]] + [[name] for name in store_order] + [["TOTAL"]]
         sheets.values().update(
             spreadsheetId=SHEET_ID,
-            range=f"'{SHEET_NAME}'!A1",
+            range=f"'{sheet_name}'!A1",
             valueInputOption="RAW",
             body={"values": init_values},
         ).execute()
         anchor_col = 0
-        row1 = ["Boutique"]
+        row1       = ["Boutique"]
 
+    # Cherche la dernière colonne avec une date + vérifie idempotence
     last_date_col = anchor_col
     for i in range(anchor_col + 1, len(row1)):
         cell = str(row1[i]).strip()
         if cell:
             if cell == date_str:
-                log.info(f"Date {date_str} déjà dans le sheet → rien à faire (Shopify)")
+                log.info(f"[{sheet_name}] Date {date_str} déjà présente → rien à faire")
                 return
             last_date_col = i
 
+    # Nouvelle colonne
     new_col = last_date_col + 1
-    col = col_letter(new_col)
-    log.info(f"[Shopify] Écriture dans la colonne {col}")
+    col     = col_letter(new_col)
+    log.info(f"[{sheet_name}] Écriture dans la colonne {col}")
 
+    # Valeurs : date + résultats par boutique
     values = [[date_str]]
-    for name in STORE_ORDER:
+    for name in store_order:
         v = results_by_name.get(name)
         values.append([v if v is not None else ""])
 
     sheets.values().update(
         spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!{col}1",
+        range=f"'{sheet_name}'!{col}1",
         valueInputOption="USER_ENTERED",
         body={"values": values},
     ).execute()
 
-    total_row = 11
+    # Ligne TOTAL
+    total_row = len(store_order) + 2  # ligne 1 = date, lignes 2..N = boutiques, ligne N+1 = TOTAL
     sheets.values().update(
         spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!{col}{total_row}",
+        range=f"'{sheet_name}'!{col}{total_row}",
         valueInputOption="USER_ENTERED",
         body={"values": [[f"=SUM({col}2:{col}{total_row - 1})"]]}
     ).execute()
 
-    log.info(f"✅ Shopify écrit — colonne {col}, date {date_str}")
-
-
-# =============================================================
-# GOOGLE SHEETS — Écriture Google Ads (lignes 14-23)
-# =============================================================
-
-def write_gads_report(date_str, results_by_name):
-    """
-    Trouve la colonne de date_str (créée par Shopify)
-    et remplit lignes 14-22 + TOTAL ligne 23.
-    """
-    svc    = get_sheets_service()
-    sheets = svc.spreadsheets()
-
-    col = find_date_column(sheets, date_str)
-    if col is None:
-        log.error(f"Date {date_str} introuvable en ligne 1.")
-        return
-
-    log.info(f"[Google Ads] Colonne trouvée : {col}")
-
-    # Idempotence
-    existing = sheets.values().get(
-        spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!{col}{ROW_GADS_START}",
-    ).execute().get("values", [[""]])[0]
-
-    if existing and existing[0] != "":
-        log.info(f"Google Ads déjà rempli pour {date_str} → rien à faire")
-        return
-
-    values = []
-    for name in STORE_ORDER:
-        v = results_by_name.get(name)
-        values.append([v if v is not None else ""])
-
-    sheets.values().update(
-        spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!{col}{ROW_GADS_START}:{col}{ROW_GADS_END}",
-        valueInputOption="USER_ENTERED",
-        body={"values": values},
-    ).execute()
-
-    sheets.values().update(
-        spreadsheetId=SHEET_ID,
-        range=f"'{SHEET_NAME}'!{col}{ROW_GADS_TOTAL}",
-        valueInputOption="USER_ENTERED",
-        body={"values": [[f"=SUM({col}{ROW_GADS_START}:{col}{ROW_GADS_END})"]]}
-    ).execute()
-
-    log.info(f"✅ Google Ads écrit — colonne {col}, date {date_str}")
+    log.info(f"✅ [{sheet_name}] Écrit — colonne {col}, date {date_str}")
 
 
 # =============================================================
@@ -361,7 +299,7 @@ def main():
 
     date_min = yesterday.replace(hour=0,  minute=0,  second=0,  microsecond=0).isoformat()
     date_max = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-    date_api = yesterday.strftime("%Y-%m-%d")  # Format Google Ads API
+    date_api = yesterday.strftime("%Y-%m-%d")
 
     # ── Shopify ──────────────────────────────────────────────
     log.info(f"=== Shopify CA HT — {date_str} ===")
@@ -375,7 +313,7 @@ def main():
     for name, val in shopify_result.items():
         log.info(f"  {name}: {val}")
 
-    write_shopify_report(date_str, shopify_result)
+    write_report(SHEET_SHOPIFY, date_str, shopify_result, STORE_ORDER)
 
     # ── Google Ads ───────────────────────────────────────────
     log.info(f"=== Google Ads dépenses — {date_str} ===")
@@ -389,7 +327,7 @@ def main():
     for name, val in gads_result.items():
         log.info(f"  {name}: {val} €")
 
-    write_gads_report(date_str, gads_result)
+    write_report(SHEET_GADS, date_str, gads_result, STORE_ORDER)
 
     log.info("=== Terminé ===")
 
