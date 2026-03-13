@@ -467,8 +467,6 @@ def traiter_payout(payout: dict, boutique: dict, invoice_index: dict,
 # =============================================================
 # POINT D'ENTRÉE
 # =============================================================
-DATE_MIN_KLARNA = "2026-03-05"  # Ne pas traiter les payouts avant cette date
-
 def main():
     parser = argparse.ArgumentParser(description="Klarna → Pennylane")
     parser.add_argument("--date", help="Date cible YYYY-MM-DD (défaut: hier)")
@@ -478,12 +476,11 @@ def main():
 
     from datetime import date as _date
     if args.cron:
-        test_mode = False
-        start = _date.fromisoformat(DATE_MIN_KLARNA)
-        end   = _date.fromisoformat((datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d"))
-        target_dates = [(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+        # Mode cron : on ne traite QUE la veille
+        test_mode    = False
+        target_dates = [(datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")]
     else:
-        test_mode = args.test
+        test_mode    = args.test
         target_dates = [args.date or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")]
 
     log.info(f"\n{'#'*60}")
