@@ -333,9 +333,8 @@ def load_invoices_from_pennylane(date_from: str) -> int:
             str(inv.get("currency_amount", "")),
         ))
 
-    rows_dedup = list({r[0]: r for r in rows}.values())
-    count = upsert_invoices(rows_dedup)
-    log.info(f"   ✅ {len(rows)} facture(s) dont {len(rows_dedup)} order_number uniques ({count} modifiée(s) en DB)")
+    count = upsert_invoices(rows)
+    log.info(f"   ✅ {len(rows)} facture(s) avec numéro de commande ({count} modifiée(s) en DB)")
     return len(rows)
 
 
@@ -411,10 +410,10 @@ def shopify_get(url: str, token: str, params: dict = None) -> dict | None:
     return None
 
 
-def load_shopify_orders_for_store(store: dict, updated_at_min: str | None = None) -> int:
+def load_shopify_orders_for_store(store: dict, created_at_min: str | None = None) -> int:
     """
     Charge les commandes Mollie d'une boutique Shopify.
-    Si updated_at_min est fourni → sync incrémentale, sinon tout.
+    created_at_min : filtre depuis cette date (ex: "2026-01-01T00:00:00Z")
     """
     name  = store["name"]
     token = get_shopify_token(store)
@@ -427,8 +426,8 @@ def load_shopify_orders_for_store(store: dict, updated_at_min: str | None = None
         "limit":  250,
         "fields": "id,name,billing_address,created_at,payment_gateway_names",
     }
-    if updated_at_min:
-        params["updated_at_min"] = updated_at_min
+    if created_at_min:
+        params["created_at_min"] = created_at_min
 
     total_inserted = 0
     next_url       = base_url
@@ -459,7 +458,8 @@ def load_shopify_orders_for_store(store: dict, updated_at_min: str | None = None
             billing_name = billing.get("company") or billing.get("name") or "Client inconnu"
             created_at   = order.get("created_at", "")[:19]
 
-            # Transactions pour le payment_id
+            # Transactions pour le payment_id — petit délai pour éviter le rate limit
+            time.sleep(0.3)
             txn_url  = f"https://{store['store']}/admin/api/{SHOPIFY_API_VERSION}/orders/{order_id}/transactions.json"
             txn_resp = shopify_get(txn_url, token, {"fields": "id,payment_id,gateway,status"})
             if not txn_resp:
@@ -472,9 +472,11 @@ def load_shopify_orders_for_store(store: dict, updated_at_min: str | None = None
 
         inserted = upsert_shopify_orders(rows)
         total_inserted += inserted
+        if page % 3 == 0:
+            log.info(f"   [{name}] page {page} — {total_inserted} commandes Mollie insérées...")
 
         # Pagination via Link header
-        link   = resp.headers.get("Link", "")
+        link     = resp.headers.get("Link", "")
         next_url = None
         if 'rel="next"' in link:
             for part in link.split(","):
@@ -482,7 +484,7 @@ def load_shopify_orders_for_store(store: dict, updated_at_min: str | None = None
                     next_url = part.split(";")[0].strip().strip("<>")
                     break
 
-    log.info(f"   [{name}] {total_inserted} nouvelle(s) commande(s) Mollie insérée(s)")
+    log.info(f"   [{name}] ✅ {total_inserted} commande(s) Mollie insérée(s) au total")
     return total_inserted
 
 
@@ -500,7 +502,7 @@ def load_shopify_orders(date_from: str | None = None) -> int:
         try:
             n = load_shopify_orders_for_store(
                 store,
-                updated_at_min=f"{date_from}T00:00:00Z" if date_from else None
+                created_at_min=f"{date_from}T00:00:00Z" if date_from else f"{FULL_LOAD_FROM}T00:00:00Z"
             )
             total += n
         except Exception as e:
