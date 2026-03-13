@@ -257,11 +257,8 @@ def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> floa
                 ("MarketplaceIds", marketplace_id),
                 ("CreatedAfter",   date_min),
                 ("CreatedBefore",  date_max),
-                ("OrderStatuses",  "Unshipped"),
-                ("OrderStatuses",  "PartiallyShipped"),
-                ("OrderStatuses",  "Shipped"),
-                ("OrderStatuses",  "Delivered"),
             ]
+
         data = amazon_get("/orders/v0/orders", params)
         if not data:
             break
