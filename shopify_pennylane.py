@@ -253,7 +253,7 @@ def get_journal_id(code: str) -> int | None:
         return _journal_cache[code]
     resp = requests.get(f"{PL_BASE}/journals", headers=PL_HEADERS, params={"per_page": 100}, timeout=30)
     if resp.status_code == 200:
-        for j in resp.json().get("journals", []):
+        for j in resp.json().get("items", []):
             if j.get("code", "").upper() == code.upper():
                 _journal_cache[code] = j["id"]
                 return j["id"]
