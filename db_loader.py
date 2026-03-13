@@ -333,8 +333,9 @@ def load_invoices_from_pennylane(date_from: str) -> int:
             str(inv.get("currency_amount", "")),
         ))
 
-    count = upsert_invoices(rows)
-    log.info(f"   ✅ {len(rows)} facture(s) avec numéro de commande ({count} modifiée(s) en DB)")
+    rows_dedup = list({r[0]: r for r in rows}.values())
+count = upsert_invoices(rows_dedup)
+log.info(f"   ✅ {len(rows)} facture(s) dont {len(rows_dedup)} order_number uniques ({count} modifiée(s) en DB)")
     return len(rows)
 
 
