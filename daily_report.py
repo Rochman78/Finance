@@ -391,22 +391,6 @@ def main():
 
     write_gads_report(date_str, gads_result)
 
-    # ── Sync commandes Shopify → DB ──────────────────────────
-    log.info("=== Sync commandes Shopify → DB ===")
-    try:
-        import sync_shopify_orders
-        sync_shopify_orders.main()
-    except Exception as e:
-        log.error(f"Erreur sync_shopify_orders : {e}")
-
-    # ── Mollie → PennyLane ───────────────────────────────────
-    log.info("=== Mollie → PennyLane ===")
-    try:
-        import mollie_pennylane
-        mollie_pennylane.run()
-    except Exception as e:
-        log.error(f"Erreur mollie_pennylane : {e}")
-
     log.info("=== Terminé ===")
 
 
