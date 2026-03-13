@@ -71,14 +71,14 @@ AMAZON_SELLER_ID     = os.environ.get("AMAZON_SELLER_ID", "")
 AMAZON_API_BASE      = "https://sellingpartnerapi-eu.amazon.com"
 
 AMAZON_MARKETPLACES = [
-    {"name": "France",      "id": "A13V1IB3VIYZZH"},
-    {"name": "Allemagne",   "id": "A1PA6795UKMFR9"},
-    {"name": "Belgique",    "id": "BNVKL2V8VLVYW"},
-    {"name": "Espagne",     "id": "A1RKKUPIHCS9HS"},
-    {"name": "Italie",      "id": "APJ6JRA9NG5V4"},
-    {"name": "Pays-Bas",    "id": "A1805IZSGTT6HS"},
-    {"name": "Suede",       "id": "A2NODRKZP88ZB9"},
-    {"name": "Pologne",     "id": "A1C3IKJU4TPSC5"},
+    {"name": "France",      "id": "A13V1IB3VIYZZH", "vat": 0.20},
+    {"name": "Allemagne",   "id": "A1PA6795UKMFR9", "vat": 0.19},
+    {"name": "Belgique",    "id": "BNVKL2V8VLVYW",  "vat": 0.21},
+    {"name": "Espagne",     "id": "A1RKKUPIHCS9HS", "vat": 0.21},
+    {"name": "Italie",      "id": "APJ6JRA9NG5V4",  "vat": 0.22},
+    {"name": "Pays-Bas",    "id": "A1805IZSGTT6HS", "vat": 0.21},
+    {"name": "Suede",       "id": "A2NODRKZP88ZB9", "vat": 0.25},
+    {"name": "Pologne",     "id": "A1C3IKJU4TPSC5", "vat": 0.23},
 ]
 
 AMAZON_MARKETPLACE_ORDER = [m["name"] for m in AMAZON_MARKETPLACES]
@@ -205,7 +205,9 @@ def get_amazon_access_token():
 
 
 def amazon_get(path, params=None):
-    """Appel GET sur l'API SP-API avec retry sur throttling."""
+    """Appel GET sur l'API SP-API avec retry sur throttling.
+    params peut contenir des listes pour les paramètres répétés (ex: OrderStatuses).
+    """
     token = get_amazon_access_token()
     headers = {
         "x-amz-access-token": token,
@@ -234,10 +236,12 @@ def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> floa
     """
     Retourne le CA HT pour un marketplace Amazon sur une journée.
     Utilise Orders API + Order Items API pour calculer ItemPrice - ItemTax.
+    Si ItemTax=0 (LIC, export Suisse...), on divise ItemPrice par (1 + taux TVA pays).
     date_str : format YYYY-MM-DD
     """
-    name         = marketplace["name"]
+    name           = marketplace["name"]
     marketplace_id = marketplace["id"]
+    vat_rate       = marketplace.get("vat", 0.20)
 
     date_min = f"{date_str}T00:00:00Z"
     date_max = f"{date_str}T23:59:59Z"
@@ -291,9 +295,14 @@ def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> floa
             continue
 
         for item in items_data.get("payload", {}).get("OrderItems", []):
-            item_price = float(item.get("ItemPrice", {}).get("Amount", 0))
-            item_tax   = float(item.get("ItemTax",   {}).get("Amount", 0))
-            total_ht  += item_price - item_tax
+            item_price = float(item.get("ItemPrice", {}).get("Amount", 0) or 0)
+            item_tax   = float(item.get("ItemTax",   {}).get("Amount", 0) or 0)
+            if item_tax > 0:
+                # TVA connue → on soustrait
+                total_ht += item_price - item_tax
+            else:
+                # LIC, export Suisse, TVA=0 → on divise par (1 + taux TVA pays)
+                total_ht += item_price / (1 + vat_rate)
 
     total_ht = round(total_ht, 2)
     log.info(f"[Amazon {name}] CA HT = {total_ht} €")
