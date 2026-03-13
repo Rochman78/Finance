@@ -247,15 +247,21 @@ def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> floa
     next_token = None
 
     while True:
-        params = {
-            "MarketplaceIds":       marketplace_id,
-            "CreatedAfter":         date_min,
-            "CreatedBefore":        date_max,
-            "OrderStatuses":        "Unshipped,PartiallyShipped,Shipped,Delivered",
-        }
         if next_token:
-            params = {"NextToken": next_token, "MarketplaceIds": marketplace_id}
-
+            params = [
+                ("NextToken",      next_token),
+                ("MarketplaceIds", marketplace_id),
+            ]
+        else:
+            params = [
+                ("MarketplaceIds", marketplace_id),
+                ("CreatedAfter",   date_min),
+                ("CreatedBefore",  date_max),
+                ("OrderStatuses",  "Unshipped"),
+                ("OrderStatuses",  "PartiallyShipped"),
+                ("OrderStatuses",  "Shipped"),
+                ("OrderStatuses",  "Delivered"),
+            ]
         data = amazon_get("/orders/v0/orders", params)
         if not data:
             break
