@@ -395,10 +395,12 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
     # If there's a difference due to unmatched orders, add a balancing line on fees account
     if abs(ecart) > 0.01:
         log.warning(f"   ⚠️  Écart {ecart:.2f}€ entre payout ({payout_amount:.2f}€) et commandes matchées ({matched_net:.2f}€)")
+        # Écart négatif = remboursements/ajustements non matchés → débit (réduit les crédits clients)
+        # Écart positif = montants non matchés côté charges → crédit
         all_lines.append({
             "ledger_account_id": frais_id,
-            "debit":  f"{ecart:.2f}" if ecart > 0 else "0.00",
-            "credit": f"{abs(ecart):.2f}" if ecart < 0 else "0.00",
+            "debit":  f"{abs(ecart):.2f}" if ecart < 0 else "0.00",
+            "credit": f"{ecart:.2f}" if ecart > 0 else "0.00",
             "label":  f"Écart versement Shopify {payout_date}",
         })
 
