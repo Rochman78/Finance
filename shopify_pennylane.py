@@ -354,13 +354,27 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
     if not lines:
         return {"success": False, "error": "Aucune ligne générée"}
 
-    net_amount = total_gross - total_fees
-    all_lines  = [{
+    # Use actual payout amount for the treasury line to match the real bank transfer
+    # Adjust for any unmatched difference (skipped orders, adjustments, disputes)
+    matched_net = round(total_gross - total_fees, 2)
+    ecart = round(payout_amount - matched_net, 2)
+
+    all_lines = [{
         "ledger_account_id": tresorerie_id,
-        "debit":  f"{net_amount:.2f}",
+        "debit":  f"{payout_amount:.2f}",
         "credit": "0.00",
         "label":  f"Versement {COMPTE_TRESORERIE} {payout_date}",
     }] + lines
+
+    # If there's a difference due to unmatched orders, add a balancing line on fees account
+    if abs(ecart) > 0.01:
+        log.warning(f"   ⚠️  Écart {ecart:.2f}€ entre payout ({payout_amount:.2f}€) et commandes matchées ({matched_net:.2f}€)")
+        all_lines.append({
+            "ledger_account_id": frais_id,
+            "debit":  f"{ecart:.2f}" if ecart > 0 else "0.00",
+            "credit": f"{abs(ecart):.2f}" if ecart < 0 else "0.00",
+            "label":  f"Écart versement Shopify {payout_date}",
+        })
 
     total_d = sum(float(l["debit"]) for l in all_lines)
     total_c = sum(float(l["credit"]) for l in all_lines)
