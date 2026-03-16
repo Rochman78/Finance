@@ -306,9 +306,9 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         source_type     = txn.get("source_type", "")
         source_order_id = txn.get("source_order_id")
         amount          = float(txn.get("amount", "0"))
-        fee             = abs(float(txn.get("fee", "0")))
+        fee             = float(txn.get("fee", "0"))
 
-        if source_type != "charge" or not source_order_id:
+        if source_type not in ("charge", "refund") or not source_order_id:
             continue
 
         order = get_order(shopify_token, store_url, source_order_id)
@@ -332,26 +332,50 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
             log.warning(f"   ⚠️  Pas de compte auxiliaire pour {customer_name}")
             continue
 
-        gross_amount = abs(amount)
-        total_gross += gross_amount
-        total_fees  += fee
+        fee_abs = abs(fee)
 
-        log.info(f"   ✅ {order_name} → {customer_name} | {gross_amount}€ (frais: {fee}€)")
-        client_lines.append(f"{customer_name} — {gross_amount:.2f}€")
+        if source_type == "charge":
+            total_gross += amount
+            total_fees  += fee_abs
 
-        lines.append({
-            "ledger_account_id": ledger_account_id,
-            "debit":  "0.00",
-            "credit": f"{gross_amount:.2f}",
-            "label":  f"{customer_name} - {order_name}",
-        })
-        if fee > 0:
+            log.info(f"   ✅ {order_name} → {customer_name} | {amount}€ (frais: {fee_abs}€)")
+            client_lines.append(f"{customer_name} — {amount:.2f}€")
+
             lines.append({
-                "ledger_account_id": frais_id,
-                "debit":  f"{fee:.2f}",
-                "credit": "0.00",
+                "ledger_account_id": ledger_account_id,
+                "debit":  "0.00",
+                "credit": f"{amount:.2f}",
                 "label":  f"{customer_name} - {order_name}",
             })
+            if fee_abs > 0:
+                lines.append({
+                    "ledger_account_id": frais_id,
+                    "debit":  f"{fee_abs:.2f}",
+                    "credit": "0.00",
+                    "label":  f"{customer_name} - {order_name}",
+                })
+
+        elif source_type == "refund":
+            refund_amount = abs(amount)
+            total_gross -= refund_amount
+            total_fees  -= fee_abs  # remboursement des frais
+
+            log.info(f"   🔄 {order_name} → {customer_name} | -{refund_amount}€ (remb. frais: {fee_abs}€)")
+            client_lines.append(f"{customer_name} — -{refund_amount:.2f}€ (remboursement)")
+
+            lines.append({
+                "ledger_account_id": ledger_account_id,
+                "debit":  f"{refund_amount:.2f}",
+                "credit": "0.00",
+                "label":  f"Remboursement {customer_name} - {order_name}",
+            })
+            if fee_abs > 0:
+                lines.append({
+                    "ledger_account_id": frais_id,
+                    "debit":  "0.00",
+                    "credit": f"{fee_abs:.2f}",
+                    "label":  f"Remb. frais {customer_name} - {order_name}",
+                })
 
     if not lines:
         return {"success": False, "error": "Aucune ligne générée"}

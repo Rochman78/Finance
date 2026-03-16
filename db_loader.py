@@ -258,9 +258,14 @@ def load_invoices_from_pennylane(date_from: str) -> int:
     return len(rows_dedup)
 
 
-def load_customers_from_pennylane() -> int:
-    log.info("👥 Chargement des clients Pennylane...")
-    customers = pl_get_all("customers")
+def load_customers_from_pennylane(date_from: str = None) -> int:
+    if date_from:
+        log.info(f"👥 Chargement des clients Pennylane mis à jour depuis {date_from}...")
+        filter_param = json.dumps([{"field": "updated_at", "operator": "gteq", "value": date_from}])
+        customers = pl_get_all("customers", {"filter": filter_param})
+    else:
+        log.info("👥 Chargement complet des clients Pennylane...")
+        customers = pl_get_all("customers")
     log.info(f"   → {len(customers)} client(s) récupéré(s)")
 
     rows = []
@@ -302,7 +307,10 @@ def main():
 
     try:
         total_invoices  = load_invoices_from_pennylane(date_from)
-        total_customers = load_customers_from_pennylane()
+        # En mode cron : ne charger que les clients modifiés depuis date_from
+        # En mode full : charger tous les clients (date_from=None)
+        customer_date = date_from if args.cron else None
+        total_customers = load_customers_from_pennylane(customer_date)
         set_meta("last_sync", datetime.now(timezone.utc).isoformat())
     except Exception as e:
         log.error(f"❌ Erreur : {e}", exc_info=True)

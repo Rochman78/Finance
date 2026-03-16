@@ -128,6 +128,23 @@ def is_payout_processed(payment_reference: str) -> bool:
         conn.close()
 
 
+def clear_processed_since(date_from: str):
+    """Supprime les payouts traités depuis date_from pour permettre le retraitement."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM processed_klarna_payouts WHERE processed_at >= %s::date",
+                (date_from,)
+            )
+            count = cur.rowcount
+        conn.commit()
+        log.info(f"🗑️  {count} payout(s) Klarna supprimé(s) depuis {date_from}")
+        return count
+    finally:
+        conn.close()
+
+
 def mark_payout_processed(payment_reference: str, boutique: str):
     conn = get_db()
     try:
@@ -482,9 +499,16 @@ def main():
     parser = argparse.ArgumentParser(description="Klarna → Pennylane")
     parser.add_argument("--date", help="Date cible YYYY-MM-DD (défaut: hier)")
     parser.add_argument("--from", dest="from_date", help="Date début rattrapage YYYY-MM-DD (jusqu'à hier)")
+    parser.add_argument("--clear", help="Supprime les payouts traités depuis cette date (YYYY-MM-DD) pour retraitement")
     parser.add_argument("--test", action="store_true", help="Mode test (aucune écriture créée)")
     parser.add_argument("--cron", action="store_true", help="Mode cron (hier, production)")
     args = parser.parse_args()
+
+    if args.clear:
+        init_klarna_table()
+        clear_processed_since(args.clear)
+        if not args.date and not args.from_date and not args.cron:
+            return
 
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
