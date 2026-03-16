@@ -128,6 +128,23 @@ def is_payout_processed(payment_reference: str) -> bool:
         conn.close()
 
 
+def clear_processed_since(date_from: str):
+    """Supprime les payouts traités depuis date_from pour permettre le retraitement."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM processed_klarna_payouts WHERE processed_at >= %s::date",
+                (date_from,)
+            )
+            count = cur.rowcount
+        conn.commit()
+        log.info(f"🗑️  {count} payout(s) Klarna supprimé(s) depuis {date_from}")
+        return count
+    finally:
+        conn.close()
+
+
 def mark_payout_processed(payment_reference: str, boutique: str):
     conn = get_db()
     try:
@@ -467,21 +484,45 @@ def traiter_payout(payout: dict, boutique: dict, invoice_index: dict,
 # =============================================================
 # POINT D'ENTRÉE
 # =============================================================
+def date_range(start: str, end: str) -> list[str]:
+    """Génère la liste des dates YYYY-MM-DD de start à end inclus."""
+    d = datetime.strptime(start, "%Y-%m-%d")
+    d_end = datetime.strptime(end, "%Y-%m-%d")
+    dates = []
+    while d <= d_end:
+        dates.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return dates
+
+
 def main():
     parser = argparse.ArgumentParser(description="Klarna → Pennylane")
     parser.add_argument("--date", help="Date cible YYYY-MM-DD (défaut: hier)")
+    parser.add_argument("--from", dest="from_date", help="Date début rattrapage YYYY-MM-DD (jusqu'à hier)")
+    parser.add_argument("--clear", help="Supprime les payouts traités depuis cette date (YYYY-MM-DD) pour retraitement")
     parser.add_argument("--test", action="store_true", help="Mode test (aucune écriture créée)")
     parser.add_argument("--cron", action="store_true", help="Mode cron (hier, production)")
     args = parser.parse_args()
 
-    from datetime import date as _date
+    if args.clear:
+        init_klarna_table()
+        clear_processed_since(args.clear)
+        if not args.date and not args.from_date and not args.cron:
+            return
+
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
     if args.cron:
-        # Mode cron : on ne traite QUE la veille
         test_mode    = False
-        target_dates = [(datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")]
+        target_dates = [yesterday]
+    elif args.from_date:
+        test_mode    = args.test
+        end = args.date or yesterday
+        target_dates = date_range(args.from_date, end)
+        log.info(f"📅 Rattrapage : {len(target_dates)} jour(s) du {target_dates[0]} au {target_dates[-1]}")
     else:
         test_mode    = args.test
-        target_dates = [args.date or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")]
+        target_dates = [args.date or yesterday]
 
     log.info(f"\n{'#'*60}")
     log.info(f"🚀 Klarna → Pennylane | {target_dates} | Test: {test_mode}")
