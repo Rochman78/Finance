@@ -382,6 +382,7 @@ def resolve_payment(payment: dict, store: dict, fee_ratio: float = 0.0) -> dict:
 
     order_name   = shopify_order["order_name"]
     billing_name = shopify_order["billing_name"]
+    resolved_store_name = shopify_order.get("store_name") or store["name"]
 
     invoice = find_invoice_by_order_name(order_name)
     if not invoice:
@@ -414,7 +415,7 @@ def resolve_payment(payment: dict, store: dict, fee_ratio: float = 0.0) -> dict:
         "amount":               amount,
         "frais":                frais,
         "payment_date":         payment_date,
-        "store_name":           store["name"],
+        "store_name":           resolved_store_name,
     }
 
 # =============================================================
@@ -436,6 +437,8 @@ def process_settlement(settlement: dict, payments: list, store: dict,
 
     lines  = []
     pieces = []
+    total_brut_ok  = 0.0
+    total_frais_ok = 0.0
     for r in ok_items:
         libelle = f"{r['customer_name']} - {r['order_name']}"
         lines.append({
@@ -445,6 +448,7 @@ def process_settlement(settlement: dict, payments: list, store: dict,
             "credit": r["amount"],
             "label":  libelle,
         })
+        total_brut_ok += r["amount"]
         if r["frais"] > 0.001:
             lines.append({
                 "account_number": COMPTE_FRAIS,
@@ -452,11 +456,15 @@ def process_settlement(settlement: dict, payments: list, store: dict,
                 "credit": 0,
                 "label":  f"Frais Mollie - {r['order_name']}",
             })
+            total_frais_ok += r["frais"]
         pieces.append(f"{JOURNAL_CODE}-{r['invoice_number']}")
 
+    # Use net from successful payments only (not full settlement_net)
+    # to keep the entry balanced when some payments are unresolved
+    net_ok = round(total_brut_ok - total_frais_ok, 2)
     lines.append({
         "account_number": COMPTE_MOLLIE,
-        "debit":  settlement_net,
+        "debit":  net_ok,
         "credit": 0,
         "label":  f"Virement Mollie {settlement['id']}",
     })
@@ -518,8 +526,8 @@ def run(target_date: str, test_mode: bool):
         settlement_net = float((settlement.get("amount") or {}).get("value", "0"))
         fee_ratio      = (total_brut - settlement_net) / total_brut if total_brut > 0 else 0.0
 
-        # Détermine la boutique via les métadonnées du premier paiement
-        store = STORES[0]  # fallback
+        # Détermine la boutique — résolution effective dans resolve_payment via shopify_orders
+        store = STORES[0]  # default, overridden per-payment by resolved_store_name
 
         result, n_ok, n_err = process_settlement(settlement, payments, store,
                                                   fee_ratio=fee_ratio, test_mode=test_mode)

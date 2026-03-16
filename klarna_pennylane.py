@@ -298,11 +298,11 @@ def grouper_par_commande(transactions: list, total_tax_amount: float) -> dict:
             orders[ref]["sale"]  += amount
         elif type_ == "FEE":
             vat_amount = round(float(t.get("vat_amount", 0)) / 100, 2)
-            orders[ref]["fee"]   += amount
-            orders[ref]["tax"]   += vat_amount
-            total_fees           += amount
+            orders[ref]["fee"]   += abs(amount)
+            orders[ref]["tax"]   += abs(vat_amount)
+            total_fees           += abs(amount)
         elif type_ == "RETURN":
-            orders[ref]["sale"]  -= amount
+            orders[ref]["sale"]  -= abs(amount)
 
     for ref, vals in orders.items():
         # tax déjà accumulé depuis vat_amount de chaque FEE
