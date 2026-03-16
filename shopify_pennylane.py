@@ -201,7 +201,9 @@ def shopify_get(url: str, token: str, params: dict = None) -> dict | None:
 
 def get_payouts(shopify_token: str, store: str, date_min: str, date_max: str) -> list:
     url  = f"https://{store}/admin/api/{SHOPIFY_API_VERSION}/shopify_payments/payouts.json"
-    data = shopify_get(url, shopify_token, {"status": "scheduled", "date_min": date_min, "date_max": date_max})
+    # Ne pas filtrer par status : quand le cron tourne le lendemain,
+    # les payouts sont déjà "in_transit" ou "paid", plus "scheduled".
+    data = shopify_get(url, shopify_token, {"date_min": date_min, "date_max": date_max})
     return data.get("payouts", []) if data else []
 
 
