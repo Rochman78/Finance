@@ -472,22 +472,42 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None):
 # =============================================================
 # POINT D'ENTRÉE
 # =============================================================
+def date_range(start: str, end: str) -> list[str]:
+    """Génère la liste des dates YYYY-MM-DD de start à end inclus."""
+    d = datetime.strptime(start, "%Y-%m-%d")
+    d_end = datetime.strptime(end, "%Y-%m-%d")
+    dates = []
+    while d <= d_end:
+        dates.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return dates
+
+
 def main():
     parser = argparse.ArgumentParser(description="Shopify Payments → Pennylane")
     parser.add_argument("--date",  help="Date cible YYYY-MM-DD (défaut: hier)")
+    parser.add_argument("--from",  dest="from_date", help="Date début rattrapage YYYY-MM-DD (jusqu'à hier)")
     parser.add_argument("--test",  action="store_true", help="Mode test (simulation)")
     parser.add_argument("--cron",  action="store_true", help="Mode cron (hier, production)")
     parser.add_argument("--store", help="Filtrer une boutique (ex: LFC)")
     args = parser.parse_args()
 
-    if args.cron:
-        test_mode   = False
-        target_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-    else:
-        test_mode   = args.test
-        target_date = args.date or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    run(target_date, test_mode, store_filter=args.store)
+    if args.cron:
+        test_mode = False
+        dates = [yesterday]
+    elif args.from_date:
+        test_mode = args.test
+        end = args.date or yesterday
+        dates = date_range(args.from_date, end)
+        log.info(f"📅 Rattrapage : {len(dates)} jour(s) du {dates[0]} au {dates[-1]}")
+    else:
+        test_mode = args.test
+        dates = [args.date or yesterday]
+
+    for target_date in dates:
+        run(target_date, test_mode, store_filter=args.store)
 
 
 if __name__ == "__main__":

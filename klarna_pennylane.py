@@ -467,21 +467,38 @@ def traiter_payout(payout: dict, boutique: dict, invoice_index: dict,
 # =============================================================
 # POINT D'ENTRÉE
 # =============================================================
+def date_range(start: str, end: str) -> list[str]:
+    """Génère la liste des dates YYYY-MM-DD de start à end inclus."""
+    d = datetime.strptime(start, "%Y-%m-%d")
+    d_end = datetime.strptime(end, "%Y-%m-%d")
+    dates = []
+    while d <= d_end:
+        dates.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return dates
+
+
 def main():
     parser = argparse.ArgumentParser(description="Klarna → Pennylane")
     parser.add_argument("--date", help="Date cible YYYY-MM-DD (défaut: hier)")
+    parser.add_argument("--from", dest="from_date", help="Date début rattrapage YYYY-MM-DD (jusqu'à hier)")
     parser.add_argument("--test", action="store_true", help="Mode test (aucune écriture créée)")
     parser.add_argument("--cron", action="store_true", help="Mode cron (hier, production)")
     args = parser.parse_args()
 
-    from datetime import date as _date
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
     if args.cron:
-        # Mode cron : on ne traite QUE la veille
         test_mode    = False
-        target_dates = [(datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")]
+        target_dates = [yesterday]
+    elif args.from_date:
+        test_mode    = args.test
+        end = args.date or yesterday
+        target_dates = date_range(args.from_date, end)
+        log.info(f"📅 Rattrapage : {len(target_dates)} jour(s) du {target_dates[0]} au {target_dates[-1]}")
     else:
         test_mode    = args.test
-        target_dates = [args.date or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")]
+        target_dates = [args.date or yesterday]
 
     log.info(f"\n{'#'*60}")
     log.info(f"🚀 Klarna → Pennylane | {target_dates} | Test: {test_mode}")
