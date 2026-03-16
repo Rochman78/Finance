@@ -184,7 +184,15 @@ def mollie_get(path: str) -> dict | None:
 
 
 def get_settlements_for_date(target_date: str) -> list:
-    """Récupère les settlements paidout pour une date donnée (settledAt = target_date)."""
+    """Récupère les settlements paidout pour une date donnée (settledAt = target_date).
+
+    L'API Mollie trie les settlements par date de création (pas settledAt),
+    donc on ne peut pas break dès qu'on voit une date antérieure — on doit
+    scanner jusqu'à un seuil de sécurité (7 jours avant la date cible).
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    cutoff = (_dt.strptime(target_date, "%Y-%m-%d") - _td(days=7)).strftime("%Y-%m-%d")
+
     settlements = []
     path = "/settlements?limit=50"
 
@@ -192,20 +200,23 @@ def get_settlements_for_date(target_date: str) -> list:
         data = mollie_get(path)
         if not data:
             break
-        items        = (data.get("_embedded") or {}).get("settlements", [])
-        reached_old  = False
+        items       = (data.get("_embedded") or {}).get("settlements", [])
+        all_too_old = True
 
         for s in items:
             if s.get("status") != "paidout":
                 continue
             settled_at = (s.get("settledAt") or "")[:10]
-            if settled_at < target_date:
-                reached_old = True
-                break
+            created_at = (s.get("createdAt") or "")[:10]
+            # Utiliser la date de création comme garde-fou pour l'arrêt
+            if created_at >= cutoff:
+                all_too_old = False
             if settled_at == target_date:
                 settlements.append(s)
 
-        if reached_old:
+        # Ne s'arrêter que si TOUS les items de la page ont une date
+        # de création antérieure au cutoff (7 jours avant la cible)
+        if all_too_old and items:
             break
         next_link = ((data.get("_links") or {}).get("next") or {}).get("href")
         if not next_link:
