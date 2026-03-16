@@ -3,6 +3,7 @@
 CA HT J-1 par boutique Shopify → Google Sheets (feuille "REPORT SHOPIFY VENTES")
 Dépenses Google Ads J-1 par boutique → Google Sheets (feuille "REPORT GOOGLE ADS")
 CA HT J-1 par pays Amazon → Google Sheets (feuille "REPORT AMAZON VENTES")
+Dépenses Amazon Ads J-1 par pays → Google Sheets (feuille "REPORT AMAZON ADS")
 """
 
 import os
@@ -10,6 +11,8 @@ import sys
 import logging
 import requests
 import time
+import gzip
+import json as json_mod
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -84,13 +87,29 @@ AMAZON_MARKETPLACES = [
 AMAZON_MARKETPLACE_ORDER = [m["name"] for m in AMAZON_MARKETPLACES]
 
 # =============================================================
+# CONFIG AMAZON ADS API (Advertising)
+# =============================================================
+AMAZON_ADS_CLIENT_ID     = os.environ.get("AMAZON_ADS_CLIENT_ID", "") or AMAZON_CLIENT_ID
+AMAZON_ADS_CLIENT_SECRET = os.environ.get("AMAZON_ADS_CLIENT_SECRET", "") or AMAZON_CLIENT_SECRET
+AMAZON_ADS_REFRESH_TOKEN = os.environ.get("AMAZON_ADS_REFRESH_TOKEN", "")
+AMAZON_ADS_API_BASE      = "https://advertising-api-eu.amazon.com"
+
+# Correspondance nom marketplace → countryCode Amazon Ads
+AMAZON_ADS_COUNTRY_MAP = {
+    "France": "FR", "Allemagne": "DE", "Belgique": "BE",
+    "Espagne": "ES", "Italie": "IT", "Pays-Bas": "NL",
+    "Suede": "SE", "Pologne": "PL",
+}
+
+# =============================================================
 # CONFIG GOOGLE SHEETS
 # =============================================================
 SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
 
-SHEET_SHOPIFY = "REPORT SHOPIFY VENTES"
-SHEET_GADS    = "REPORT GOOGLE ADS"
-SHEET_AMAZON  = "REPORT AMAZON VENTES"
+SHEET_SHOPIFY    = "REPORT SHOPIFY VENTES"
+SHEET_GADS       = "REPORT GOOGLE ADS"
+SHEET_AMAZON     = "REPORT AMAZON VENTES"
+SHEET_AMAZON_ADS = "REPORT AMAZON ADS"
 
 SERVICE_ACCOUNT_EMAIL = os.environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL", "")
 PRIVATE_KEY           = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
@@ -359,6 +378,193 @@ def fetch_gads_spend(customer_id, date_str):
 
 
 # =============================================================
+# AMAZON ADS — Récupération des dépenses publicitaires
+# =============================================================
+
+_amazon_ads_token_cache = {"token": None, "expires_at": 0}
+
+
+def get_amazon_ads_access_token():
+    """Obtient un access token LWA pour Amazon Ads."""
+    now = time.time()
+    if _amazon_ads_token_cache["token"] and now < _amazon_ads_token_cache["expires_at"]:
+        return _amazon_ads_token_cache["token"]
+
+    resp = requests.post(
+        "https://api.amazon.com/auth/o2/token",
+        data={
+            "grant_type":    "refresh_token",
+            "refresh_token": AMAZON_ADS_REFRESH_TOKEN,
+            "client_id":     AMAZON_ADS_CLIENT_ID,
+            "client_secret": AMAZON_ADS_CLIENT_SECRET,
+        },
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"Amazon Ads LWA error: {resp.status_code} {resp.text}")
+
+    data = resp.json()
+    _amazon_ads_token_cache["token"]      = data["access_token"]
+    _amazon_ads_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+    log.info("  Token Amazon Ads LWA OK")
+    return data["access_token"]
+
+
+def get_amazon_ads_profiles():
+    """Récupère les profils Amazon Ads → dict {countryCode: profileId}."""
+    token = get_amazon_ads_access_token()
+    resp = requests.get(
+        f"{AMAZON_ADS_API_BASE}/v2/profiles",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Amazon-Advertising-API-ClientId": AMAZON_ADS_CLIENT_ID,
+        },
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"Amazon Ads profiles error: {resp.status_code} {resp.text}")
+
+    result = {}
+    for p in resp.json():
+        country    = p.get("countryCode")
+        profile_id = p.get("profileId")
+        acct_type  = p.get("accountInfo", {}).get("type", "")
+        if country and profile_id and acct_type == "seller":
+            result[country] = str(profile_id)
+    log.info(f"  Profils Amazon Ads trouvés : {list(result.keys())}")
+    return result
+
+
+def _create_ads_report(token, profile_id, ad_product, report_type_id, date_str):
+    """Crée une demande de rapport Amazon Ads v3. Retourne le reportId ou None."""
+    resp = requests.post(
+        f"{AMAZON_ADS_API_BASE}/reporting/reports",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Amazon-Advertising-API-ClientId": AMAZON_ADS_CLIENT_ID,
+            "Amazon-Advertising-API-Scope": profile_id,
+            "Content-Type": "application/vnd.createasyncreportrequest.v3+json",
+            "Accept": "application/vnd.createasyncreportrequest.v3+json",
+        },
+        json={
+            "startDate": date_str,
+            "endDate":   date_str,
+            "configuration": {
+                "adProduct":    ad_product,
+                "groupBy":      ["campaign"],
+                "columns":      ["cost"],
+                "reportTypeId": report_type_id,
+                "timeUnit":     "SUMMARY",
+                "format":       "GZIP_JSON",
+            },
+        },
+        timeout=30,
+    )
+    if resp.status_code in (200, 202):
+        return resp.json().get("reportId")
+    log.debug(f"  Report {ad_product} creation: {resp.status_code} {resp.text[:200]}")
+    return None
+
+
+def _poll_and_download_report(token, profile_id, report_id):
+    """Attend la fin d'un rapport et retourne la somme des coûts."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Amazon-Advertising-API-ClientId": AMAZON_ADS_CLIENT_ID,
+        "Amazon-Advertising-API-Scope": profile_id,
+    }
+    for attempt in range(20):
+        time.sleep(min(2 + attempt * 2, 15))
+        resp = requests.get(
+            f"{AMAZON_ADS_API_BASE}/reporting/reports/{report_id}",
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            continue
+        data = resp.json()
+        status = data.get("status")
+        if status == "COMPLETED":
+            url = data.get("url")
+            if not url:
+                return 0.0
+            dl = requests.get(url, timeout=30)
+            if dl.status_code != 200:
+                return 0.0
+            rows = json_mod.loads(gzip.decompress(dl.content))
+            return sum(float(r.get("cost", 0) or 0) for r in rows)
+        elif status == "FAILED":
+            return 0.0
+    return 0.0
+
+
+def fetch_amazon_ads_spend_for_profile(profile_id, date_str, marketplace_name):
+    """
+    Récupère les dépenses Amazon Ads (SP + SB + SD) pour un profil/marketplace.
+    date_str : format YYYY-MM-DD
+    """
+    token = get_amazon_ads_access_token()
+
+    # Créer les rapports pour chaque type de publicité
+    ad_types = [
+        ("SPONSORED_PRODUCTS", "spCampaigns"),
+        ("SPONSORED_BRANDS",   "sbCampaigns"),
+        ("SPONSORED_DISPLAY",  "sdCampaigns"),
+    ]
+
+    report_ids = []
+    for ad_product, report_type_id in ad_types:
+        rid = _create_ads_report(token, profile_id, ad_product, report_type_id, date_str)
+        if rid:
+            report_ids.append((ad_product, rid))
+
+    # Polling et téléchargement des résultats
+    total_spend = 0.0
+    for ad_product, rid in report_ids:
+        try:
+            spend = _poll_and_download_report(token, profile_id, rid)
+            total_spend += spend
+        except Exception as e:
+            log.warning(f"[Amazon Ads {marketplace_name}] {ad_product} download error: {e}")
+
+    total_spend = round(total_spend, 2)
+    log.info(f"[Amazon Ads {marketplace_name}] Dépenses = {total_spend} €")
+    return total_spend
+
+
+def fetch_amazon_ads_spend(date_str):
+    """Retourne un dict {pays: spend} pour tous les marketplaces Amazon Ads."""
+    if not AMAZON_ADS_REFRESH_TOKEN:
+        log.warning("AMAZON_ADS_REFRESH_TOKEN non configuré → skip Amazon Ads")
+        return {}
+
+    try:
+        profiles = get_amazon_ads_profiles()
+    except Exception as e:
+        log.error(f"Erreur récupération profils Amazon Ads : {e}")
+        return {}
+
+    results = {}
+    for marketplace in AMAZON_MARKETPLACES:
+        name         = marketplace["name"]
+        country_code = AMAZON_ADS_COUNTRY_MAP.get(name)
+        profile_id   = profiles.get(country_code)
+
+        if not profile_id:
+            log.warning(f"[Amazon Ads {name}] Pas de profil trouvé pour {country_code}")
+            results[name] = 0.0
+            continue
+
+        try:
+            results[name] = fetch_amazon_ads_spend_for_profile(profile_id, date_str, name)
+        except Exception as e:
+            log.error(f"[Amazon Ads {name}] Erreur : {e}")
+            results[name] = None
+
+    return results
+
+
+# =============================================================
 # GOOGLE SHEETS — Utilitaires
 # =============================================================
 
@@ -532,6 +738,17 @@ def main():
         log.info(f"  {name}: {val} €")
 
     write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER)
+
+    # ── Amazon Ads ────────────────────────────────────────────
+    log.info(f"=== Amazon Ads dépenses — {date_str} ===")
+    amazon_ads_result = fetch_amazon_ads_spend(date_api)
+
+    if amazon_ads_result:
+        log.info("--- Résultats Amazon Ads ---")
+        for name, val in amazon_ads_result.items():
+            log.info(f"  {name}: {val} €")
+
+        write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_MARKETPLACE_ORDER)
 
     log.info("=== Terminé ===")
 
