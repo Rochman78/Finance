@@ -79,11 +79,13 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
 
     while True:
         page += 1
-        p = {"per_page": 100}
+        p = {"per_page": 500}
         if params:
             p.update(params)
         if cursor:
             p["cursor"] = cursor
+        else:
+            p["page"] = page  # fallback pagination par page
 
         for attempt in range(5):
             try:
@@ -108,14 +110,18 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
 
         data  = resp.json()
         items = data.get("items", [])
+        if not items:
+            break
         all_items.extend(items)
 
         if page % 10 == 0:
             log.info(f"   ... {len(all_items)} éléments ({endpoint}, page {page})")
 
-        if not data.get("has_more") or not data.get("next_cursor"):
-            break
-        cursor = data["next_cursor"]
+        # Cursor pagination si supportée, sinon page-based
+        if data.get("has_more") and data.get("next_cursor"):
+            cursor = data["next_cursor"]
+        elif len(items) < int(p.get("per_page", 500)):
+            break  # dernière page (moins d'items que demandé)
 
     return all_items
 
