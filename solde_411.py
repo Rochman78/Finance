@@ -86,7 +86,13 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
             p["cursor"] = cursor
 
         for attempt in range(5):
-            resp = requests.get(f"{PL_BASE}/{endpoint}", headers=PL_HEADERS, params=p, timeout=30)
+            try:
+                resp = requests.get(f"{PL_BASE}/{endpoint}", headers=PL_HEADERS, params=p, timeout=30)
+            except requests.exceptions.RequestException as e:
+                wait = min(2 ** attempt, 10)
+                log.warning(f"   ⚠️ Connexion error ({e.__class__.__name__}) — retry {attempt+1}/5 in {wait}s...")
+                time.sleep(wait)
+                continue
             if resp.status_code == 200:
                 break
             if resp.status_code == 429:
@@ -97,7 +103,7 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
                 log.error(f"❌ GET {endpoint}: {resp.status_code} {resp.text}")
                 return all_items
         else:
-            log.error(f"❌ GET {endpoint}: rate limit persistant")
+            log.error(f"❌ GET {endpoint}: échec après 5 tentatives")
             return all_items
 
         data  = resp.json()
