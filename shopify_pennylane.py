@@ -377,6 +377,31 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
                     "label":  f"Remb. frais {customer_name} - {order_name}",
                 })
 
+    if not lines and payout_amount < 0:
+        # Versement négatif sans charge/refund (ajustement, réserve, retrait…)
+        # → écriture simple : crédit trésorerie + débit compte de frais
+        abs_amount = abs(payout_amount)
+        log.info(f"   🔄 Versement négatif {payout_amount:.2f}€ → écriture d'ajustement")
+        all_lines = [
+            {
+                "ledger_account_id": tresorerie_id,
+                "debit":  "0.00",
+                "credit": f"{abs_amount:.2f}",
+                "label":  f"Retrait Shopify {payout_date}",
+            },
+            {
+                "ledger_account_id": frais_id,
+                "debit":  f"{abs_amount:.2f}",
+                "credit": "0.00",
+                "label":  f"Ajustement Shopify {payout_date}",
+            },
+        ]
+        label  = f"Versement Shopify Payments {payout_date} [{store_name}]"
+        result = create_ledger_entry(payout_date, label, journal_id, all_lines, test_mode)
+        if result:
+            return {"success": True, "nb_clients": 0, "details": [f"Ajustement {payout_amount:.2f}€"]}
+        return {"success": False, "error": "Échec création Pennylane"}
+
     if not lines:
         return {"success": False, "error": "Aucune ligne générée"}
 
@@ -385,12 +410,23 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
     matched_net = round(total_gross - total_fees, 2)
     ecart = round(payout_amount - matched_net, 2)
 
-    all_lines = [{
-        "ledger_account_id": tresorerie_id,
-        "debit":  f"{payout_amount:.2f}",
-        "credit": "0.00",
-        "label":  f"Versement {COMPTE_TRESORERIE} {payout_date}",
-    }] + lines
+    # Versement positif → débit trésorerie ; versement négatif → crédit trésorerie
+    if payout_amount >= 0:
+        tresorerie_line = {
+            "ledger_account_id": tresorerie_id,
+            "debit":  f"{payout_amount:.2f}",
+            "credit": "0.00",
+            "label":  f"Versement {COMPTE_TRESORERIE} {payout_date}",
+        }
+    else:
+        tresorerie_line = {
+            "ledger_account_id": tresorerie_id,
+            "debit":  "0.00",
+            "credit": f"{abs(payout_amount):.2f}",
+            "label":  f"Retrait {COMPTE_TRESORERIE} {payout_date}",
+        }
+
+    all_lines = [tresorerie_line] + lines
 
     # If there's a difference due to unmatched orders, add a balancing line on fees account
     if abs(ecart) > 0.01:
