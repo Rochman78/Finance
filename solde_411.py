@@ -33,8 +33,8 @@ PENNYLANE_TOKEN = os.environ.get("PENNYLANE_TOKEN", "")
 PL_BASE         = "https://app.pennylane.com/api/external/v2"
 PL_HEADERS      = {"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"}
 
-COMPTE_658   = "65800000000"   # Charges diverses de gestion courante
-COMPTE_758   = "75800000000"   # Produits divers de gestion courante
+COMPTE_658   = "658"   # Charges diverses de gestion courante
+COMPTE_758   = "758"   # Produits divers de gestion courante
 JOURNAL_CODE = "OD"       # Journal des opérations diverses
 SEUIL        = 0.03       # Seuil par défaut en euros
 
@@ -126,7 +126,7 @@ def get_account_id(account_number: str) -> int | None:
                         params={"filter": filter_param, "per_page": 5}, timeout=30)
     if resp.status_code == 200:
         for item in resp.json().get("items", []):
-            if item.get("number") == account_number:
+            if item.get("number") == account_number and item.get("vat_rate") == "any":
                 _accounts_cache[account_number] = item["id"]
                 return item["id"]
     log.error(f"❌ Compte '{account_number}' introuvable")
