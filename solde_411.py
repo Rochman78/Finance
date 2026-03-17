@@ -72,7 +72,7 @@ def telegram_send(msg: str):
 # =============================================================
 # PENNYLANE — Pagination
 # =============================================================
-def pl_get_all(endpoint: str, params: dict = None, max_items: int = 0) -> list:
+def pl_get_all(endpoint: str, params: dict = None) -> list:
     all_items = []
     cursor    = None
     page      = 0
@@ -107,9 +107,6 @@ def pl_get_all(endpoint: str, params: dict = None, max_items: int = 0) -> list:
         if page % 10 == 0:
             log.info(f"   ... {len(all_items)} éléments ({endpoint}, page {page})")
 
-        if max_items and len(all_items) >= max_items:
-            all_items = all_items[:max_items]
-            break
         if not data.get("has_more") or not data.get("next_cursor"):
             break
         cursor = data["next_cursor"]
@@ -172,17 +169,16 @@ def create_ledger_entry(date: str, label: str, journal_id: int, lines: list, tes
 # RÉCUPÉRATION DES COMPTES 411 ET CALCUL DES SOLDES
 # =============================================================
 def get_411_accounts(limit: int = 1000) -> list:
-    """Récupère les derniers comptes 411XXX depuis Pennylane (triés par ID desc)."""
+    """Récupère tous les comptes 411XXX puis ne garde que les `limit` plus récents (par ID desc)."""
     filter_param = json.dumps([{"field": "number", "operator": "start_with", "value": "411"}])
-    accounts = pl_get_all("ledger_accounts", {
-        "filter": filter_param,
-        "sort":   "-id",
-        "per_page": min(limit, 100),
-    }, max_items=limit)
+    accounts = pl_get_all("ledger_accounts", {"filter": filter_param})
     # Exclure les comptes de transit
     filtered = [a for a in accounts if a.get("number") not in COMPTES_EXCLUS]
-    log.info(f"📋 {len(filtered)} compte(s) 411 client(s) trouvé(s) ({len(accounts)} récupérés, {len(accounts) - len(filtered)} exclus, limite: {limit})")
-    return filtered
+    # Garder les N plus récents (ID le plus élevé = le plus récent)
+    filtered.sort(key=lambda a: a.get("id", 0), reverse=True)
+    kept = filtered[:limit]
+    log.info(f"📋 {len(kept)} compte(s) 411 retenus sur {len(filtered)} client(s) ({len(accounts)} total, limite: {limit})")
+    return kept
 
 
 def get_account_balance(account_id: int) -> float:
