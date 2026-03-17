@@ -33,8 +33,8 @@ PENNYLANE_TOKEN = os.environ.get("PENNYLANE_TOKEN", "")
 PL_BASE         = "https://app.pennylane.com/api/external/v2"
 PL_HEADERS      = {"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"}
 
-COMPTE_658   = "658000"   # Charges diverses de gestion courante
-COMPTE_758   = "758000"   # Produits divers de gestion courante
+COMPTE_658   = "65800000000"   # Charges diverses de gestion courante
+COMPTE_758   = "75800000000"   # Produits divers de gestion courante
 JOURNAL_CODE = "OD"       # Journal des opérations diverses
 SEUIL        = 0.03       # Seuil par défaut en euros
 
