@@ -191,6 +191,7 @@ async function createQuote({
   date,
   deadline,
   customerId,
+  quoteTemplateId,
   currency = 'EUR',
   language = 'fr_FR',
   subject,
@@ -213,6 +214,7 @@ async function createQuote({
     language,
   };
 
+  if (quoteTemplateId) payload.quote_template_id = quoteTemplateId;
   if (subject) payload.pdf_invoice_subject = subject;
   if (freeText) payload.pdf_invoice_free_text = freeText;
   if (description) payload.pdf_description = description;

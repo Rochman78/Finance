@@ -4,30 +4,51 @@
 /**
  * Script autonome pour créer un devis PennyLane.
  *
- * Utilisable par un agent Claude qui génère le chiffrage puis appelle ce script :
+ * Utilisable par un agent Claude qui génère le chiffrage puis appelle ce script.
  *
- *   node createQuote.js '{
+ * Exemple d'input JSON :
+ *
+ *   {
+ *     "store": "LFC",
  *     "customer": {
  *       "type": "individual",
  *       "firstName": "Mathieu",
  *       "lastName": "BAJARD",
- *       "address": { "address": "26 impasse de l amenier", "postalCode": "05230", "city": "Chorges" }
+ *       "email": "matthieu.bajard@gmail.com",
+ *       "phone": "0666893138",
+ *       "address": { "address": "26 impasse de l'amendier", "postalCode": "05230", "city": "Chorges" }
  *     },
- *     "subject": "Devis filet camouflage",
+ *     "subject": "Devis filet polyester sable 0.75x0.95m",
  *     "lines": [
- *       { "label": "Filet polyester sable 0.75x0.95m", "quantity": 2, "unitPrice": "45.00", "vatRate": "FR_200", "unit": "m2" }
+ *       {
+ *         "type": "product",
+ *         "label": "SABLE - 0.75x0.95 m - Filet de camouflage renforce corde de 6mm",
+ *         "description": "Quantité : 2 | Total m² : 1.43 | Délai de production + livraison : environ 14 jours",
+ *         "quantity": 1.43,
+ *         "unitPrice": "45.00",
+ *         "unit": "m2"
+ *       },
+ *       {
+ *         "type": "transport",
+ *         "label": "Transport sur mesure",
+ *         "unitPrice": "19.99"
+ *       },
+ *       {
+ *         "type": "transport_discount",
+ *         "label": "Remise transport sur mesure",
+ *         "unitPrice": "-19.99"
+ *       }
  *     ]
- *   }'
+ *   }
  *
- * Le script :
- *   1. Cherche le client par nom + adresse dans PennyLane
- *   2. Si non trouvé, le crée automatiquement (particulier ou professionnel)
- *   3. Crée le devis avec les lignes fournies
- *   4. Retourne un JSON avec quoteId, quoteNumber, pdfUrl
+ * Line types :
+ *   - "product"            → rattaché au product_id 14369303 (filet template), surcharge label/qty/prix
+ *   - "transport"          → ligne libre transport
+ *   - "transport_discount" → ligne libre remise transport (prix négatif)
+ *   - "accessory"          → ligne libre accessoire
+ *   - "free"               → ligne libre quelconque
  *
- * Customer types :
- *   - "individual" (particulier) : firstName, lastName requis
- *   - "company" (professionnel) : name requis, vatNumber optionnel
+ * Stores : LFC, HET, LVO, COCO, MON, RED, RETE, TAR, UNI
  *
  * Variables d'environnement requises : PENNYLANE_API_KEY
  * Optionnel : MODE_TEST=true pour simuler sans créer dans PennyLane
@@ -37,6 +58,30 @@ require('dotenv').config();
 
 const { findOrCreateCustomer, createQuote } = require('./services/pennylaneQuoteService');
 const logger = require('./utils/logger');
+
+// ---------------------------------------------------------------------------
+// Mapping des boutiques → quote_template_id PennyLane
+// ---------------------------------------------------------------------------
+
+const STORE_TEMPLATES = {
+  HET:  257162,   // Het Camouflage Net - DEVIS
+  LFC:  253634,   // Le Filet de Camouflage - DEVIS
+  LVO:  877143,   // LVO devis
+  COCO: 257180,   // Ma toile coco - DEVIS
+  MON:  883869,   // MON OMBRAGE Devis
+  RED:  257168,   // Red de Camuflaje - DEVIS
+  RETE: 861190,   // RETE devis
+  TAR:  257174,   // Tarnnetz - DEVIS
+  UNI:  883875,   // UNIVERS devis
+};
+
+// ---------------------------------------------------------------------------
+// Product ID template pour les filets (on surcharge label/qty/prix/description)
+// ---------------------------------------------------------------------------
+
+const PRODUCT_ID_FILET = 14369303;
+
+// ---------------------------------------------------------------------------
 
 async function readStdin() {
   const chunks = [];
@@ -61,6 +106,15 @@ async function main() {
     console.error('Erreur JSON:', err.message);
     process.exit(1);
   }
+
+  // --- Résolution de la boutique → template ---
+  const store = (input.store ?? 'LFC').toUpperCase();
+  const quoteTemplateId = STORE_TEMPLATES[store];
+  if (!quoteTemplateId) {
+    console.error(`Boutique inconnue: "${store}". Valeurs acceptées: ${Object.keys(STORE_TEMPLATES).join(', ')}`);
+    process.exit(1);
+  }
+  logger.info(`Boutique: ${store} → template ${quoteTemplateId}`);
 
   // --- Résolution du client ---
   let customerId = input.customerId;
@@ -93,23 +147,41 @@ async function main() {
   }
 
   // --- Construction des lignes ---
-  const lines = (input.lines ?? []).map((l) => ({
-    label: l.label,
-    quantity: l.quantity ?? 1,
-    raw_currency_unit_price: l.unitPrice ?? l.raw_currency_unit_price,
-    vat_rate: l.vatRate ?? l.vat_rate ?? 'FR_200',
-    unit: l.unit ?? 'piece',
-    description: l.description,
-    product_id: l.productId ?? l.product_id,
-    section_rank: l.sectionRank ?? l.section_rank,
-    discount: l.discount,
-  }));
+  const lines = (input.lines ?? []).map((l) => {
+    const lineType = (l.type ?? 'free').toLowerCase();
+    const line = {
+      label: l.label,
+      quantity: l.quantity ?? 1,
+      raw_currency_unit_price: l.unitPrice ?? l.raw_currency_unit_price,
+      vat_rate: l.vatRate ?? l.vat_rate ?? 'FR_200',
+      unit: l.unit ?? 'piece',
+      description: l.description,
+      section_rank: l.sectionRank ?? l.section_rank,
+      discount: l.discount,
+    };
+
+    // Rattacher au produit filet template pour les lignes produit
+    if (lineType === 'product') {
+      line.product_id = l.productId ?? l.product_id ?? PRODUCT_ID_FILET;
+    }
+
+    return line;
+  });
+
+  // --- Deadline par défaut : +30 jours ---
+  let deadline = input.deadline;
+  if (!deadline) {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    deadline = d.toISOString().slice(0, 10);
+  }
 
   // --- Création du devis ---
   const result = await createQuote({
     date: input.date ?? new Date().toISOString().slice(0, 10),
-    deadline: input.deadline,
+    deadline,
     customerId,
+    quoteTemplateId,
     currency: input.currency ?? 'EUR',
     language: input.language ?? 'fr_FR',
     subject: input.subject,
