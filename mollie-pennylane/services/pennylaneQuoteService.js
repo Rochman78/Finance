@@ -20,14 +20,42 @@ function client() {
 // Recherche de client par nom ou email
 // ---------------------------------------------------------------------------
 
+/**
+ * Recherche un client dans PennyLane.
+ * Filtres supportés par l'API v2 : id, customer_type, ledger_account_id, name,
+ * external_reference, reg_no, emails.
+ * Seul l'opérateur "eq" est supporté pour "name" (pas "contains").
+ */
 async function findCustomer(search) {
+  // Recherche exacte par nom
   const filter = JSON.stringify([
-    { field: 'name', operator: 'contains', value: search },
+    { field: 'name', operator: 'eq', value: search },
   ]);
-  const { data } = await client().get('/customers', {
-    params: { filter, per_page: 10 },
-  });
-  return data.items ?? [];
+  try {
+    const { data } = await client().get('/customers', {
+      params: { filter, per_page: 10 },
+    });
+    if ((data.items ?? []).length > 0) return data.items;
+  } catch (err) {
+    logger.warn(`[PennyLane] Recherche exacte échouée: ${err.message}`);
+  }
+
+  // Recherche par email si le search ressemble à un email
+  if (search.includes('@')) {
+    const emailFilter = JSON.stringify([
+      { field: 'emails', operator: 'eq', value: search },
+    ]);
+    try {
+      const { data } = await client().get('/customers', {
+        params: { filter: emailFilter, per_page: 10 },
+      });
+      if ((data.items ?? []).length > 0) return data.items;
+    } catch (err) {
+      logger.warn(`[PennyLane] Recherche par email échouée: ${err.message}`);
+    }
+  }
+
+  return [];
 }
 
 // ---------------------------------------------------------------------------
