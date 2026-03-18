@@ -8,11 +8,38 @@
 </head>
 <body>
     <div id="app">
-        <!-- Header -->
         <header class="header">
             <h1>Front + Claude</h1>
             <p class="subtitle">Assistant de rédaction email intelligent</p>
         </header>
+
+        <!-- Config toggle -->
+        <div class="config-toggle">
+            <button onclick="toggleConfig()" id="config-toggle-btn" class="btn btn-secondary">Configurer l'agent</button>
+            <span id="config-status" class="config-status"></span>
+        </div>
+
+        <!-- Agent config panel -->
+        <section id="config-panel" class="panel config-panel">
+            <div class="panel-header">
+                <h2>Configuration de l'agent Claude</h2>
+                <button onclick="toggleConfig()" class="btn btn-secondary">Fermer</button>
+            </div>
+            <div class="config-body">
+                <div class="config-section">
+                    <label>Instructions personnalisées :</label>
+                    <p class="hint">Collez ici le prompt système de votre Project Claude (ton, règles, style de réponse...)</p>
+                    <textarea id="agent-instructions" rows="8" placeholder="Ex: Tu es l'assistant de la société X. Tu réponds toujours de manière formelle. Tu signes avec 'Cordialement, L'équipe X'..."></textarea>
+                    <button onclick="saveInstructions()" class="btn btn-primary">Sauvegarder les instructions</button>
+                </div>
+                <div class="config-section">
+                    <label>Fichiers de référence :</label>
+                    <p class="hint">Uploadez vos documents (FAQ, templates, procédures...) — formats: txt, pdf, md, csv, json, docx</p>
+                    <input type="file" id="file-upload" accept=".txt,.pdf,.md,.csv,.json,.docx" onchange="uploadFile()">
+                    <div id="files-list" class="files-list"></div>
+                </div>
+            </div>
+        </section>
 
         <!-- Step indicator -->
         <div class="steps">
@@ -50,17 +77,12 @@
         <section id="step2" class="panel">
             <div class="panel-header">
                 <h2>Discussion avec Claude</h2>
-                <button onclick="goToStep(1)" class="btn btn-secondary">← Retour</button>
+                <button onclick="goToStep(1)" class="btn btn-secondary">Retour</button>
             </div>
-
-            <!-- Selected conversation context -->
             <div id="context-preview" class="context-preview"></div>
-
-            <!-- Chat area -->
             <div id="chat-messages" class="chat-messages"></div>
-
             <div class="chat-input-area">
-                <textarea id="user-input" placeholder="Donnez des instructions à Claude (ex: 'Rédige une réponse polie déclinant la proposition')..." rows="3"></textarea>
+                <textarea id="user-input" placeholder="Donnez des instructions à Claude..." rows="3"></textarea>
                 <button onclick="sendToClaud()" id="send-btn" class="btn btn-primary">Envoyer</button>
             </div>
         </section>
@@ -69,21 +91,16 @@
         <section id="step3" class="panel">
             <div class="panel-header">
                 <h2>Validation du brouillon</h2>
-                <button onclick="goToStep(2)" class="btn btn-secondary">← Modifier</button>
+                <button onclick="goToStep(2)" class="btn btn-secondary">Modifier</button>
             </div>
-
             <div class="draft-area">
                 <label>Brouillon final :</label>
                 <textarea id="draft-content" rows="12"></textarea>
             </div>
-
             <div class="draft-actions">
                 <button onclick="goToStep(2)" class="btn btn-secondary">Continuer avec Claude</button>
-                <button onclick="sendDraftToFront()" id="send-draft-btn" class="btn btn-success">
-                    Envoyer comme brouillon dans Front
-                </button>
+                <button onclick="sendDraftToFront()" id="send-draft-btn" class="btn btn-success">Envoyer comme brouillon dans Front</button>
             </div>
-
             <div id="draft-status" class="status-message"></div>
         </section>
     </div>

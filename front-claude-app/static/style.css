@@ -323,6 +323,85 @@ select {
     background: #fef2f2;
 }
 
+/* Config toggle */
+.config-toggle {
+    text-align: center;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+}
+.config-status {
+    font-size: 0.82rem;
+    color: #22c55e;
+    font-weight: 500;
+}
+
+/* Config panel */
+.config-panel {
+    margin-bottom: 16px;
+    border: 2px solid #6c47ff;
+}
+.config-body {
+    padding: 20px;
+}
+.config-section {
+    margin-bottom: 20px;
+}
+.config-section label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.config-section .hint {
+    font-size: 0.82rem;
+    color: #888;
+    margin-bottom: 8px;
+}
+.config-section textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+    margin-bottom: 8px;
+}
+.config-section textarea:focus {
+    outline: none;
+    border-color: #6c47ff;
+}
+.config-section input[type="file"] {
+    margin-bottom: 12px;
+}
+.files-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+.file-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: #f0eeff;
+    border-radius: 16px;
+    font-size: 0.82rem;
+    color: #6c47ff;
+}
+.file-tag .remove-file {
+    cursor: pointer;
+    font-weight: bold;
+    color: #dc2626;
+    margin-left: 2px;
+}
+.file-tag .remove-file:hover {
+    color: #991b1b;
+}
+
 /* Loading spinner */
 .loading {
     display: inline-block;

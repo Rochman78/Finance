@@ -242,6 +242,90 @@ async function sendDraftToFront() {
     }
 }
 
+// ─── Agent Config ────────────────────────────────────────────────────────────
+
+function toggleConfig() {
+    const panel = document.getElementById("config-panel");
+    panel.classList.toggle("active");
+}
+
+async function saveInstructions() {
+    const instructions = document.getElementById("agent-instructions").value;
+    try {
+        await fetch("/api/config/instructions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ instructions }),
+        });
+        updateConfigStatus();
+    } catch (e) {
+        console.error("Failed to save instructions:", e);
+    }
+}
+
+async function uploadFile() {
+    const input = document.getElementById("file-upload");
+    const file = input.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        const resp = await fetch("/api/config/upload", { method: "POST", body: formData });
+        const data = await resp.json();
+        if (data.error) {
+            alert("Erreur: " + data.error);
+        } else {
+            loadFilesList();
+            updateConfigStatus();
+        }
+    } catch (e) {
+        console.error("Failed to upload file:", e);
+    }
+    input.value = "";
+}
+
+async function removeFile(filename) {
+    try {
+        await fetch("/api/config/files/" + encodeURIComponent(filename), { method: "DELETE" });
+        loadFilesList();
+        updateConfigStatus();
+    } catch (e) {
+        console.error("Failed to remove file:", e);
+    }
+}
+
+async function loadFilesList() {
+    try {
+        const resp = await fetch("/api/config");
+        const data = await resp.json();
+        const list = document.getElementById("files-list");
+        list.innerHTML = "";
+        data.files.forEach(f => {
+            const tag = document.createElement("span");
+            tag.className = "file-tag";
+            tag.innerHTML = escapeHtml(f) + ' <span class="remove-file" onclick="removeFile(\'' + escapeHtml(f) + '\')">&times;</span>';
+            list.appendChild(tag);
+        });
+        if (data.instructions) {
+            document.getElementById("agent-instructions").value = data.instructions;
+        }
+    } catch (e) {
+        console.error("Failed to load config:", e);
+    }
+}
+
+function updateConfigStatus() {
+    const statusEl = document.getElementById("config-status");
+    const instructions = document.getElementById("agent-instructions").value.trim();
+    const filesList = document.getElementById("files-list").children.length;
+    const parts = [];
+    if (instructions) parts.push("instructions ok");
+    if (filesList > 0) parts.push(filesList + " fichier(s)");
+    statusEl.textContent = parts.length > 0 ? "Agent: " + parts.join(" + ") : "";
+}
+
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
 function escapeHtml(str) {
@@ -273,3 +357,4 @@ document.getElementById("user-input").addEventListener("keydown", function(e) {
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 loadInboxes();
+loadFilesList();
