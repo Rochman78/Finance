@@ -7,18 +7,27 @@
  * Utilisable par un agent Claude qui génère le chiffrage puis appelle ce script :
  *
  *   node createQuote.js '{
- *     "client": "Dupont SAS",
- *     "date": "2026-03-18",
- *     "deadline": "2026-04-18",
- *     "subject": "Devis prestation Mars 2026",
+ *     "customer": {
+ *       "type": "individual",
+ *       "firstName": "Mathieu",
+ *       "lastName": "BAJARD",
+ *       "address": { "address": "26 impasse de l amenier", "postalCode": "05230", "city": "Chorges" }
+ *     },
+ *     "subject": "Devis filet camouflage",
  *     "lines": [
- *       { "label": "Audit initial", "quantity": 1, "unitPrice": "1500.00", "vatRate": "FR_200" },
- *       { "label": "Développement", "quantity": 5, "unit": "day", "unitPrice": "800.00", "vatRate": "FR_200" }
+ *       { "label": "Filet polyester sable 0.75x0.95m", "quantity": 2, "unitPrice": "45.00", "vatRate": "FR_200", "unit": "m2" }
  *     ]
  *   }'
  *
- * Ou via stdin :
- *   echo '{ ... }' | node createQuote.js
+ * Le script :
+ *   1. Cherche le client par nom + adresse dans PennyLane
+ *   2. Si non trouvé, le crée automatiquement (particulier ou professionnel)
+ *   3. Crée le devis avec les lignes fournies
+ *   4. Retourne un JSON avec quoteId, quoteNumber, pdfUrl
+ *
+ * Customer types :
+ *   - "individual" (particulier) : firstName, lastName requis
+ *   - "company" (professionnel) : name requis, vatNumber optionnel
  *
  * Variables d'environnement requises : PENNYLANE_API_KEY
  * Optionnel : MODE_TEST=true pour simuler sans créer dans PennyLane
@@ -26,7 +35,7 @@
 
 require('dotenv').config();
 
-const { findCustomer, createQuote } = require('./services/pennylaneQuoteService');
+const { findOrCreateCustomer, createQuote } = require('./services/pennylaneQuoteService');
 const logger = require('./utils/logger');
 
 async function readStdin() {
@@ -56,22 +65,30 @@ async function main() {
   // --- Résolution du client ---
   let customerId = input.customerId;
 
+  if (!customerId && input.customer) {
+    const c = input.customer;
+    customerId = await findOrCreateCustomer({
+      type: c.type ?? 'individual',
+      firstName: c.firstName,
+      lastName: c.lastName,
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      vatNumber: c.vatNumber,
+      address: c.address,
+    });
+  }
+
+  // Rétrocompatibilité : "client" = recherche par nom simple
   if (!customerId && input.client) {
-    logger.info(`Recherche du client "${input.client}" dans PennyLane…`);
-    const matches = await findCustomer(input.client);
-    if (matches.length === 0) {
-      console.error(`Aucun client trouvé pour "${input.client}". Créez-le dans PennyLane ou passez customerId.`);
-      process.exit(1);
-    }
-    customerId = matches[0].id;
-    logger.info(`Client trouvé: ${matches[0].name} (id=${customerId})`);
-    if (matches.length > 1) {
-      logger.warn(`Attention: ${matches.length} clients correspondent — le premier est utilisé.`);
-    }
+    customerId = await findOrCreateCustomer({
+      type: 'individual',
+      name: input.client,
+    });
   }
 
   if (!customerId) {
-    console.error('Veuillez fournir "client" (nom) ou "customerId" (ID PennyLane).');
+    console.error('Veuillez fournir "customer" (objet client) ou "customerId" (ID PennyLane).');
     process.exit(1);
   }
 

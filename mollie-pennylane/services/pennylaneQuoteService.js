@@ -31,6 +31,101 @@ async function findCustomer(search) {
 }
 
 // ---------------------------------------------------------------------------
+// Création de client
+// ---------------------------------------------------------------------------
+
+/**
+ * Crée un client dans PennyLane.
+ *
+ * @param {object} params
+ * @param {string}  params.type        - "individual" ou "company"
+ * @param {string}  [params.firstName] - Prénom (particulier)
+ * @param {string}  [params.lastName]  - Nom (particulier)
+ * @param {string}  [params.name]      - Raison sociale (professionnel)
+ * @param {string}  [params.email]     - Email
+ * @param {string}  [params.phone]     - Téléphone
+ * @param {string}  [params.vatNumber] - Numéro de TVA (professionnel)
+ * @param {object}  [params.address]   - { address, postalCode, city, countryAlpha2 }
+ */
+async function createCustomer({
+  type = 'individual',
+  firstName,
+  lastName,
+  name,
+  email,
+  phone,
+  vatNumber,
+  address,
+}) {
+  const payload = { customer_type: type };
+
+  if (type === 'individual') {
+    if (firstName) payload.first_name = firstName;
+    if (lastName) payload.last_name = lastName;
+  } else {
+    if (name) payload.name = name;
+    if (vatNumber) payload.vat_number = vatNumber;
+  }
+
+  if (email) payload.emails = [email];
+  if (phone) payload.phone = phone;
+
+  if (address) {
+    const addr = {
+      address: address.address ?? '',
+      postal_code: address.postalCode ?? '',
+      city: address.city ?? '',
+      country_alpha2: address.countryAlpha2 ?? 'FR',
+    };
+    payload.billing_address = addr;
+    payload.delivery_address = addr;
+  }
+
+  const { data } = await client().post('/customers', payload);
+  logger.info(`[PennyLane] Client créé: ${data.name} (id=${data.id})`);
+  return data;
+}
+
+/**
+ * Recherche un client par nom. Si non trouvé, le crée automatiquement.
+ * Retourne l'ID du client.
+ */
+async function findOrCreateCustomer(customerInfo) {
+  const searchName = customerInfo.name
+    || `${customerInfo.firstName ?? ''} ${customerInfo.lastName ?? ''}`.trim();
+
+  if (!searchName) throw new Error('Nom du client requis');
+
+  // Recherche par nom
+  const matches = await findCustomer(searchName);
+
+  // Vérification par adresse si plusieurs résultats
+  if (matches.length > 0 && customerInfo.address) {
+    const byAddress = matches.find((c) => {
+      const addr = c.billing_address ?? {};
+      const inputCity = (customerInfo.address.city ?? '').toLowerCase();
+      const inputPostal = customerInfo.address.postalCode ?? '';
+      return (addr.city ?? '').toLowerCase() === inputCity
+        || (addr.postal_code ?? '') === inputPostal;
+    });
+    if (byAddress) {
+      logger.info(`[PennyLane] Client trouvé par nom + adresse: ${byAddress.name} (id=${byAddress.id})`);
+      return byAddress.id;
+    }
+  }
+
+  if (matches.length > 0) {
+    logger.info(`[PennyLane] Client trouvé par nom: ${matches[0].name} (id=${matches[0].id})`);
+    return matches[0].id;
+  }
+
+  // Pas trouvé → création
+  logger.info(`[PennyLane] Client "${searchName}" non trouvé, création en cours…`);
+  const created = await createCustomer(customerInfo);
+  return created.id;
+}
+
+// ---------------------------------------------------------------------------
 // Création de devis
 // ---------------------------------------------------------------------------
 
@@ -171,6 +266,8 @@ async function createInvoiceFromQuote(quoteId, { finalize = false } = {}) {
 
 module.exports = {
   findCustomer,
+  createCustomer,
+  findOrCreateCustomer,
   createQuote,
   getQuote,
   listQuotes,
