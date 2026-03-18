@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Front + Claude — Assistant Email</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>Front + Claude</h1>
+            <p class="subtitle">Assistant de rédaction email intelligent</p>
+        </header>
+
+        <!-- Step indicator -->
+        <div class="steps">
+            <div class="step active" data-step="1">
+                <span class="step-num">1</span>
+                <span class="step-label">Sélectionner</span>
+            </div>
+            <div class="step" data-step="2">
+                <span class="step-num">2</span>
+                <span class="step-label">Rédiger avec Claude</span>
+            </div>
+            <div class="step" data-step="3">
+                <span class="step-num">3</span>
+                <span class="step-label">Valider & Envoyer</span>
+            </div>
+        </div>
+
+        <!-- STEP 1: Select conversations -->
+        <section id="step1" class="panel active">
+            <div class="panel-header">
+                <h2>Conversations Front</h2>
+                <div class="controls">
+                    <select id="inbox-select">
+                        <option value="">Toutes les boîtes</option>
+                    </select>
+                    <button onclick="loadConversations()" class="btn btn-primary">Charger</button>
+                </div>
+            </div>
+            <div id="conversations-list" class="conversations-list">
+                <p class="placeholder">Cliquez sur "Charger" pour afficher vos conversations Front.</p>
+            </div>
+        </section>
+
+        <!-- STEP 2: Chat with Claude -->
+        <section id="step2" class="panel">
+            <div class="panel-header">
+                <h2>Discussion avec Claude</h2>
+                <button onclick="goToStep(1)" class="btn btn-secondary">← Retour</button>
+            </div>
+
+            <!-- Selected conversation context -->
+            <div id="context-preview" class="context-preview"></div>
+
+            <!-- Chat area -->
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <div class="chat-input-area">
+                <textarea id="user-input" placeholder="Donnez des instructions à Claude (ex: 'Rédige une réponse polie déclinant la proposition')..." rows="3"></textarea>
+                <button onclick="sendToClaud()" id="send-btn" class="btn btn-primary">Envoyer</button>
+            </div>
+        </section>
+
+        <!-- STEP 3: Validate draft -->
+        <section id="step3" class="panel">
+            <div class="panel-header">
+                <h2>Validation du brouillon</h2>
+                <button onclick="goToStep(2)" class="btn btn-secondary">← Modifier</button>
+            </div>
+
+            <div class="draft-area">
+                <label>Brouillon final :</label>
+                <textarea id="draft-content" rows="12"></textarea>
+            </div>
+
+            <div class="draft-actions">
+                <button onclick="goToStep(2)" class="btn btn-secondary">Continuer avec Claude</button>
+                <button onclick="sendDraftToFront()" id="send-draft-btn" class="btn btn-success">
+                    Envoyer comme brouillon dans Front
+                </button>
+            </div>
+
+            <div id="draft-status" class="status-message"></div>
+        </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
