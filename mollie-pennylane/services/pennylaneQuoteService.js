@@ -1,0 +1,178 @@
+'use strict';
+
+const axios = require('axios');
+const logger = require('../utils/logger');
+
+const BASE = 'https://app.pennylane.com/api/external/v2';
+
+function client() {
+  return axios.create({
+    baseURL: BASE,
+    headers: {
+      Authorization: `Bearer ${process.env.PENNYLANE_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    timeout: 15000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Recherche de client par nom ou email
+// ---------------------------------------------------------------------------
+
+async function findCustomer(search) {
+  const filter = JSON.stringify([
+    { field: 'name', operator: 'contains', value: search },
+  ]);
+  const { data } = await client().get('/customers', {
+    params: { filter, per_page: 10 },
+  });
+  return data.items ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Création de devis
+// ---------------------------------------------------------------------------
+
+/**
+ * Crée un devis (quote) dans PennyLane via l'API v2.
+ *
+ * @param {object} params
+ * @param {string}   params.date             - Date du devis (YYYY-MM-DD)
+ * @param {string}   params.deadline         - Date de validité (YYYY-MM-DD)
+ * @param {number}   params.customerId       - ID client PennyLane
+ * @param {string}   [params.currency]       - Devise (défaut: EUR)
+ * @param {string}   [params.language]       - Langue du PDF (défaut: fr_FR)
+ * @param {string}   [params.subject]        - Objet du devis
+ * @param {string}   [params.freeText]       - Texte libre en bas du PDF
+ * @param {string}   [params.description]    - Description affichée sur le PDF
+ * @param {string}   [params.specialMention] - Mention spéciale
+ * @param {string}   [params.externalRef]    - Référence externe (ex: numéro de projet)
+ * @param {object}   [params.discount]       - { type: "absolute"|"percentage", value: "25" }
+ * @param {object[]} [params.sections]       - Sections de lignes
+ * @param {object[]} params.lines            - Lignes du devis
+ *
+ * Chaque ligne (params.lines) peut contenir :
+ *   - label            (string)  ex: "Prestation de conseil"
+ *   - quantity          (number)  ex: 2
+ *   - raw_currency_unit_price (string)  ex: "150.00"
+ *   - vat_rate          (string)  ex: "FR_200" (20%), "FR_100" (10%), "FR_055" (5.5%), "FR_021" (2.1%)
+ *   - unit              (string)  ex: "piece", "hour", "day"
+ *   - description       (string)  description de la ligne
+ *   - product_id        (number)  si un produit PennyLane existe, il remplit auto les champs
+ *   - section_rank      (number)  rang de la section parente
+ *   - discount          (object)  { type, value }
+ *   - ledger_account_id (number)  compte de vente (optionnel)
+ */
+async function createQuote({
+  date,
+  deadline,
+  customerId,
+  currency = 'EUR',
+  language = 'fr_FR',
+  subject,
+  freeText,
+  description,
+  specialMention,
+  externalRef,
+  discount,
+  sections,
+  lines,
+}) {
+  if (!customerId) throw new Error('customerId est requis');
+  if (!lines || lines.length === 0) throw new Error('Au moins une ligne est requise');
+
+  const payload = {
+    date,
+    deadline,
+    customer_id: customerId,
+    currency,
+    language,
+  };
+
+  if (subject) payload.pdf_invoice_subject = subject;
+  if (freeText) payload.pdf_invoice_free_text = freeText;
+  if (description) payload.pdf_description = description;
+  if (specialMention) payload.special_mention = specialMention;
+  if (externalRef) payload.external_reference = externalRef;
+  if (discount) payload.discount = discount;
+
+  if (sections && sections.length > 0) {
+    payload.invoice_line_sections = sections.map((s, i) => ({
+      title: s.title,
+      description: s.description ?? '',
+      rank: s.rank ?? i + 1,
+    }));
+  }
+
+  payload.invoice_lines = lines.map((line) => {
+    const l = { label: line.label, quantity: line.quantity ?? 1 };
+    if (line.raw_currency_unit_price != null) l.raw_currency_unit_price = String(line.raw_currency_unit_price);
+    if (line.vat_rate) l.vat_rate = line.vat_rate;
+    if (line.unit) l.unit = line.unit;
+    if (line.description) l.description = line.description;
+    if (line.product_id) l.product_id = line.product_id;
+    if (line.section_rank) l.section_rank = line.section_rank;
+    if (line.discount) l.discount = line.discount;
+    if (line.ledger_account_id) l.ledger_account_id = line.ledger_account_id;
+    return l;
+  });
+
+  if (process.env.MODE_TEST === 'true') {
+    logger.info(`[PennyLane] [MODE TEST] Simulation devis pour client ${customerId}`);
+    payload.invoice_lines.forEach((l) =>
+      logger.info(`  → ${l.label} x${l.quantity} @ ${l.raw_currency_unit_price ?? '(produit)'} ${l.vat_rate ?? ''}`)
+    );
+    return { id: 'TEST', quote_number: 'TEST-0001', status: 'simulated', public_file_url: null };
+  }
+
+  const { data } = await client().post('/quotes', payload);
+  logger.info(`[PennyLane] Devis créé: ${data.quote_number} (id=${data.id}) — PDF: ${data.public_file_url ?? 'en cours'}`);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Récupération d'un devis existant (avec URL du PDF)
+// ---------------------------------------------------------------------------
+
+async function getQuote(quoteId) {
+  const { data } = await client().get(`/quotes/${quoteId}`);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Liste des devis
+// ---------------------------------------------------------------------------
+
+async function listQuotes({ status, customerId, page = 1, perPage = 25 } = {}) {
+  const filters = [];
+  if (status) filters.push({ field: 'status', operator: 'eq', value: status });
+  if (customerId) filters.push({ field: 'customer_id', operator: 'eq', value: String(customerId) });
+
+  const params = { page, per_page: perPage };
+  if (filters.length > 0) params.filter = JSON.stringify(filters);
+
+  const { data } = await client().get('/quotes', { params });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Créer une facture à partir d'un devis accepté
+// ---------------------------------------------------------------------------
+
+async function createInvoiceFromQuote(quoteId, { finalize = false } = {}) {
+  const { data } = await client().post('/customer_invoices/create_from_quote', {
+    quote_id: quoteId,
+    finalize,
+  });
+  logger.info(`[PennyLane] Facture créée depuis devis ${quoteId}: ${data.invoice_number ?? data.id}`);
+  return data;
+}
+
+module.exports = {
+  findCustomer,
+  createQuote,
+  getQuote,
+  listQuotes,
+  createInvoiceFromQuote,
+};
