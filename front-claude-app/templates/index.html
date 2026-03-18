@@ -10,66 +10,67 @@
     <div id="app">
         <header class="header">
             <h1>Front + Claude</h1>
-            <p class="subtitle">Assistant de rédaction email intelligent</p>
+            <p class="subtitle">Assistant de redaction email intelligent</p>
         </header>
 
-        <!-- Config toggle -->
-        <div class="config-toggle">
-            <button onclick="toggleConfig()" id="config-toggle-btn" class="btn btn-secondary">Configurer l'agent</button>
-            <span id="config-status" class="config-status"></span>
-        </div>
-
-        <!-- Agent config panel -->
-        <section id="config-panel" class="panel config-panel">
+        <!-- STEP 0: Choose inbox -->
+        <section id="step0" class="panel active">
             <div class="panel-header">
-                <h2>Configuration de l'agent Claude</h2>
-                <button onclick="toggleConfig()" class="btn btn-secondary">Fermer</button>
+                <h2>Choisissez votre boite mail</h2>
+                <button onclick="showAdminLogin()" class="btn btn-secondary btn-small">Admin</button>
             </div>
-            <div class="config-body">
-                <div class="config-section">
-                    <label>Instructions personnalisées :</label>
-                    <p class="hint">Collez ici le prompt système de votre Project Claude (ton, règles, style de réponse...)</p>
-                    <textarea id="agent-instructions" rows="8" placeholder="Ex: Tu es l'assistant de la société X. Tu réponds toujours de manière formelle. Tu signes avec 'Cordialement, L'équipe X'..."></textarea>
-                    <button onclick="saveInstructions()" class="btn btn-primary">Sauvegarder les instructions</button>
-                </div>
-                <div class="config-section">
-                    <label>Fichiers de référence :</label>
-                    <p class="hint">Uploadez vos documents (FAQ, templates, procédures...) — formats: txt, pdf, md, csv, json, docx</p>
-                    <input type="file" id="file-upload" accept=".txt,.pdf,.md,.csv,.json,.docx" onchange="uploadFile()">
-                    <div id="files-list" class="files-list"></div>
-                </div>
+            <div id="inboxes-grid" class="inboxes-grid">
+                <p class="placeholder"><span class="loading"></span> Chargement des boites...</p>
             </div>
         </section>
 
-        <!-- Step indicator -->
-        <div class="steps">
-            <div class="step active" data-step="1">
-                <span class="step-num">1</span>
-                <span class="step-label">Sélectionner</span>
-            </div>
-            <div class="step" data-step="2">
-                <span class="step-num">2</span>
-                <span class="step-label">Rédiger avec Claude</span>
-            </div>
-            <div class="step" data-step="3">
-                <span class="step-num">3</span>
-                <span class="step-label">Valider & Envoyer</span>
+        <!-- ADMIN: Login modal -->
+        <div id="admin-modal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Administration</h2>
+                    <button onclick="closeAdminModal()" class="btn btn-secondary btn-small">Fermer</button>
+                </div>
+                <div id="admin-login-form" class="modal-body">
+                    <label>Mot de passe admin :</label>
+                    <input type="password" id="admin-password" placeholder="Mot de passe">
+                    <button onclick="adminLogin()" class="btn btn-primary">Se connecter</button>
+                    <p id="admin-error" class="error-text"></p>
+                </div>
+                <div id="admin-panel" class="modal-body" style="display:none;">
+                    <div class="admin-inbox-select">
+                        <label>Configurer la boite :</label>
+                        <select id="admin-inbox-select" onchange="loadInboxConfig()">
+                            <option value="">-- Choisir une boite --</option>
+                        </select>
+                    </div>
+                    <div id="admin-config" style="display:none;">
+                        <div class="config-section">
+                            <label>Instructions personnalisees :</label>
+                            <p class="hint">Collez le prompt systeme de votre agent Claude pour cette boite</p>
+                            <textarea id="admin-instructions" rows="8" placeholder="Ex: Tu es l'assistant de la boutique X..."></textarea>
+                            <button onclick="saveAdminInstructions()" class="btn btn-primary">Sauvegarder</button>
+                            <span id="save-status" class="save-status"></span>
+                        </div>
+                        <div class="config-section">
+                            <label>Fichiers de reference :</label>
+                            <p class="hint">FAQ, templates, procedures... (txt, pdf, md, csv, json, docx)</p>
+                            <input type="file" id="admin-file-upload" accept=".txt,.pdf,.md,.csv,.json,.docx" onchange="uploadAdminFile()">
+                            <div id="admin-files-list" class="files-list"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- STEP 1: Select conversations -->
-        <section id="step1" class="panel active">
+        <!-- STEP 1: Conversations (inside selected inbox) -->
+        <section id="step1" class="panel">
             <div class="panel-header">
-                <h2>Conversations Front</h2>
-                <div class="controls">
-                    <select id="inbox-select">
-                        <option value="">Toutes les boîtes</option>
-                    </select>
-                    <button onclick="loadConversations()" class="btn btn-primary">Charger</button>
-                </div>
+                <h2 id="inbox-title">Conversations</h2>
+                <button onclick="goToStep(0)" class="btn btn-secondary">Changer de boite</button>
             </div>
             <div id="conversations-list" class="conversations-list">
-                <p class="placeholder">Cliquez sur "Charger" pour afficher vos conversations Front.</p>
+                <p class="placeholder"><span class="loading"></span> Chargement...</p>
             </div>
         </section>
 
@@ -82,7 +83,7 @@
             <div id="context-preview" class="context-preview"></div>
             <div id="chat-messages" class="chat-messages"></div>
             <div class="chat-input-area">
-                <textarea id="user-input" placeholder="Donnez des instructions à Claude..." rows="3"></textarea>
+                <textarea id="user-input" placeholder="Donnez des instructions a Claude..." rows="3"></textarea>
                 <button onclick="sendToClaud()" id="send-btn" class="btn btn-primary">Envoyer</button>
             </div>
         </section>
@@ -99,8 +100,9 @@
             </div>
             <div class="draft-actions">
                 <button onclick="goToStep(2)" class="btn btn-secondary">Continuer avec Claude</button>
-                <button onclick="sendDraftToFront()" id="send-draft-btn" class="btn btn-success">Envoyer comme brouillon dans Front</button>
+                <button onclick="sendDraftToFront()" id="send-draft-btn" class="btn btn-success">Charger le brouillon dans Front</button>
             </div>
+            <p class="draft-warning">Ce bouton cree uniquement un brouillon dans Front. Rien n'est envoye au client.</p>
             <div id="draft-status" class="status-message"></div>
         </section>
     </div>

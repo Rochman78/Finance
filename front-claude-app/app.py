@@ -2,6 +2,7 @@ import os
 import json
 import anthropic
 import requests
+from functools import wraps
 from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -14,15 +15,71 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max upload
 CORS(app)
 
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+FRONT_API_BASE = "https://api2.frontapp.com"
+FRONT_API_TOKEN = os.getenv("FRONT_API_TOKEN", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+CONFIG_FILE = os.path.join(DATA_DIR, "inbox_configs.json")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 ALLOWED_EXTENSIONS = {"txt", "pdf", "md", "csv", "json", "docx"}
 
-# Store custom instructions and files content in memory
-agent_config = {
-    "instructions": "",
-    "files_content": {},
-}
+DEFAULT_PROMPT = """Tu es un assistant professionnel specialise dans la redaction de reponses emails.
+On te fournit le contexte d'une conversation email (messages precedents).
+Tu dois proposer un brouillon de reponse professionnel, clair et adapte au ton de la conversation.
+Reponds en francais sauf si la conversation est dans une autre langue.
+Sois concis et professionnel."""
+
+
+# ─── Config persistence ──────────────────────────────────────────────────────
+
+
+def load_all_configs():
+    """Load per-inbox configs from disk."""
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_all_configs(configs):
+    """Save per-inbox configs to disk."""
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(configs, f, ensure_ascii=False, indent=2)
+
+
+def get_inbox_config(inbox_id):
+    """Get config for a specific inbox."""
+    configs = load_all_configs()
+    return configs.get(inbox_id, {"instructions": "", "files": {}})
+
+
+def set_inbox_config(inbox_id, config):
+    """Set config for a specific inbox."""
+    configs = load_all_configs()
+    configs[inbox_id] = config
+    save_all_configs(configs)
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+
+def front_headers():
+    return {
+        "Authorization": f"Bearer {FRONT_API_TOKEN}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def front_headers_no_content_type():
+    return {
+        "Authorization": f"Bearer {FRONT_API_TOKEN}",
+        "Accept": "application/json",
+    }
 
 
 def allowed_file(filename):
@@ -55,23 +112,24 @@ def extract_file_text(filepath):
             return "[DOCX support requires python-docx: pip install python-docx]"
     return ""
 
-FRONT_API_BASE = "https://api2.frontapp.com"
-FRONT_API_TOKEN = os.getenv("FRONT_API_TOKEN", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-DEFAULT_PROMPT = """Tu es un assistant professionnel spécialisé dans la rédaction de réponses emails.
-On te fournit le contexte d'une conversation email (messages précédents).
-Tu dois proposer un brouillon de réponse professionnel, clair et adapté au ton de la conversation.
-Réponds en français sauf si la conversation est dans une autre langue.
-Sois concis et professionnel."""
+def inbox_upload_dir(inbox_id):
+    """Get upload directory for a specific inbox."""
+    safe_id = secure_filename(inbox_id)
+    d = os.path.join(UPLOAD_DIR, safe_id)
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
-def front_headers():
-    return {
-        "Authorization": f"Bearer {FRONT_API_TOKEN}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
+def require_admin(f):
+    """Decorator to require admin authentication."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("X-Admin-Password", "")
+        if auth != ADMIN_PASSWORD:
+            return jsonify({"error": "Acces refuse. Mot de passe admin incorrect."}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
@@ -82,53 +140,82 @@ def index():
     return render_template("index.html")
 
 
-# ─── Agent config endpoints ──────────────────────────────────────────────────
+# ─── Admin auth ──────────────────────────────────────────────────────────────
 
 
-@app.route("/api/config", methods=["GET"])
-def get_config():
-    """Get current agent instructions and uploaded files list."""
+@app.route("/api/admin/login", methods=["POST"])
+def admin_login():
+    """Verify admin password."""
+    data = request.get_json()
+    if data.get("password") == ADMIN_PASSWORD:
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "Mot de passe incorrect"}), 403
+
+
+# ─── Per-inbox agent config (admin only) ─────────────────────────────────────
+
+
+@app.route("/api/config/<inbox_id>", methods=["GET"])
+@require_admin
+def get_config(inbox_id):
+    """Get config for a specific inbox."""
+    config = get_inbox_config(inbox_id)
     return jsonify({
-        "instructions": agent_config["instructions"],
-        "files": list(agent_config["files_content"].keys()),
+        "instructions": config.get("instructions", ""),
+        "files": list(config.get("files", {}).keys()),
     })
 
 
-@app.route("/api/config/instructions", methods=["POST"])
-def save_instructions():
-    """Save custom system instructions."""
+@app.route("/api/config/<inbox_id>/instructions", methods=["POST"])
+@require_admin
+def save_instructions(inbox_id):
+    """Save custom instructions for an inbox."""
     data = request.get_json()
-    agent_config["instructions"] = data.get("instructions", "")
+    config = get_inbox_config(inbox_id)
+    config["instructions"] = data.get("instructions", "")
+    set_inbox_config(inbox_id, config)
     return jsonify({"status": "ok"})
 
 
-@app.route("/api/config/upload", methods=["POST"])
-def upload_file():
-    """Upload a reference file for Claude context."""
+@app.route("/api/config/<inbox_id>/upload", methods=["POST"])
+@require_admin
+def upload_file(inbox_id):
+    """Upload a reference file for an inbox."""
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
     f = request.files["file"]
     if f.filename == "":
         return jsonify({"error": "No file selected"}), 400
     if not allowed_file(f.filename):
-        return jsonify({"error": f"Type non supporté. Types acceptés: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
+        return jsonify({"error": f"Type non supporte. Types acceptes: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
 
     filename = secure_filename(f.filename)
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    upload_path = inbox_upload_dir(inbox_id)
+    filepath = os.path.join(upload_path, filename)
     f.save(filepath)
 
     content = extract_file_text(filepath)
-    agent_config["files_content"][filename] = content
+
+    config = get_inbox_config(inbox_id)
+    if "files" not in config:
+        config["files"] = {}
+    config["files"][filename] = content
+    set_inbox_config(inbox_id, config)
 
     return jsonify({"status": "ok", "filename": filename})
 
 
-@app.route("/api/config/files/<filename>", methods=["DELETE"])
-def delete_file(filename):
-    """Remove an uploaded file."""
+@app.route("/api/config/<inbox_id>/files/<filename>", methods=["DELETE"])
+@require_admin
+def delete_file(inbox_id, filename):
+    """Remove an uploaded file for an inbox."""
     filename = secure_filename(filename)
-    agent_config["files_content"].pop(filename, None)
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    config = get_inbox_config(inbox_id)
+    if "files" in config:
+        config["files"].pop(filename, None)
+    set_inbox_config(inbox_id, config)
+
+    filepath = os.path.join(inbox_upload_dir(inbox_id), filename)
     if os.path.exists(filepath):
         os.remove(filepath)
     return jsonify({"status": "ok"})
@@ -146,27 +233,39 @@ def get_inboxes():
     return jsonify(resp.json())
 
 
-@app.route("/api/conversations")
-def get_conversations():
-    """List conversations, optionally filtered by inbox."""
-    inbox_id = request.args.get("inbox_id")
-    query = request.args.get("q", "")
+@app.route("/api/inboxes/<inbox_id>/conversations")
+def get_inbox_conversations(inbox_id):
+    """List non-archived conversations for a specific inbox."""
     page_token = request.args.get("page_token", "")
 
-    if inbox_id:
-        url = f"{FRONT_API_BASE}/inboxes/{inbox_id}/conversations"
-    else:
-        url = f"{FRONT_API_BASE}/conversations"
-
-    params = {}
-    if query:
-        params["q"] = query
+    # Use Front search to get only unarchived conversations in this inbox
+    url = f"{FRONT_API_BASE}/conversations/search/{inbox_id}"
+    params = {
+        "q": "[statuses:unassigned,assigned]",
+    }
     if page_token:
         params["page_token"] = page_token
 
     resp = requests.get(url, headers=front_headers(), params=params)
+
+    # Fallback: if search endpoint fails, use inbox conversations and filter
     if resp.status_code != 200:
-        return jsonify({"error": resp.text}), resp.status_code
+        url = f"{FRONT_API_BASE}/inboxes/{inbox_id}/conversations"
+        params = {}
+        if page_token:
+            params["page_token"] = page_token
+        resp = requests.get(url, headers=front_headers(), params=params)
+        if resp.status_code != 200:
+            return jsonify({"error": resp.text}), resp.status_code
+        data = resp.json()
+        # Filter out archived conversations client-side
+        if "_results" in data:
+            data["_results"] = [
+                c for c in data["_results"]
+                if c.get("status") not in ("archived", "trashed", "deleted")
+            ]
+        return jsonify(data)
+
     return jsonify(resp.json())
 
 
@@ -189,6 +288,7 @@ def get_messages(conversation_id):
 def chat_with_claude():
     """Send conversation context + user instructions to Claude and get a draft."""
     data = request.get_json()
+    inbox_id = data.get("inbox_id", "")
     messages_context = data.get("messages_context", "")
     chat_history = data.get("chat_history", [])
     user_message = data.get("user_message", "")
@@ -198,19 +298,24 @@ def chat_with_claude():
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    # Build system prompt: custom instructions (or default) + files + email context
-    if agent_config["instructions"]:
-        system = agent_config["instructions"]
-    else:
-        system = DEFAULT_PROMPT
+    # Load per-inbox config
+    config = get_inbox_config(inbox_id) if inbox_id else {}
+    instructions = config.get("instructions", "")
+    files = config.get("files", {})
 
-    if agent_config["files_content"]:
+    # Build system prompt
+    system = instructions if instructions else DEFAULT_PROMPT
+
+    if files:
         system += "\n\n--- DOCUMENTS DE REFERENCE ---"
-        for fname, fcontent in agent_config["files_content"].items():
+        for fname, fcontent in files.items():
             system += f"\n\n[{fname}]:\n{fcontent}"
 
     if messages_context:
         system += f"\n\n--- CONVERSATION EMAIL ---\n{messages_context}"
+
+    # IMPORTANT: remind Claude to only draft, never send
+    system += "\n\nIMPORTANT: Tu rediges uniquement des BROUILLONS. Ne propose jamais d'envoyer directement."
 
     api_messages = []
     for msg in chat_history:
@@ -228,53 +333,45 @@ def chat_with_claude():
     return jsonify({"response": assistant_text})
 
 
-# ─── Draft to Front ──────────────────────────────────────────────────────────
+# ─── Draft to Front (DRAFT ONLY — never sends) ──────────────────────────────
 
 
 @app.route("/api/drafts", methods=["POST"])
 def create_draft():
-    """Create a draft reply in Front for a given conversation."""
+    """Create a draft reply in Front. This ONLY creates a draft, never sends."""
     data = request.get_json()
     conversation_id = data.get("conversation_id")
     body = data.get("body", "")
-    author_id = data.get("author_id")
+    channel_id = data.get("channel_id")
 
     if not conversation_id or not body:
         return jsonify({"error": "conversation_id and body are required"}), 400
 
-    # Create a reply draft on the conversation
-    payload = {
-        "body": body,
-        "channel_id": data.get("channel_id"),
-    }
-    if author_id:
-        payload["author_id"] = author_id
+    # ONLY use the draft creation endpoint — never the send/reply endpoint
+    payload = {"body": body}
+    if channel_id:
+        payload["channel_id"] = channel_id
 
-    # Front API: create a draft for the conversation
     resp = requests.post(
         f"{FRONT_API_BASE}/conversations/{conversation_id}/drafts",
         headers=front_headers(),
         json=payload,
     )
 
-    if resp.status_code not in (200, 201):
+    if resp.status_code not in (200, 201, 202):
         return jsonify({"error": resp.text}), resp.status_code
-    return jsonify(resp.json())
+
+    # Return success even if Front returns empty body (202)
+    try:
+        return jsonify(resp.json())
+    except Exception:
+        return jsonify({"status": "draft_created"})
 
 
 @app.route("/api/channels")
 def get_channels():
-    """List channels (needed to identify which channel to draft from)."""
+    """List channels."""
     resp = requests.get(f"{FRONT_API_BASE}/channels", headers=front_headers())
-    if resp.status_code != 200:
-        return jsonify({"error": resp.text}), resp.status_code
-    return jsonify(resp.json())
-
-
-@app.route("/api/teammates")
-def get_teammates():
-    """List teammates (needed for author_id when creating drafts)."""
-    resp = requests.get(f"{FRONT_API_BASE}/teammates", headers=front_headers())
     if resp.status_code != 200:
         return jsonify({"error": resp.text}), resp.status_code
     return jsonify(resp.json())
