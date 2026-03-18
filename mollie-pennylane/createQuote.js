@@ -76,10 +76,11 @@ const STORE_TEMPLATES = {
 };
 
 // ---------------------------------------------------------------------------
-// Product ID template pour les filets (on surcharge label/qty/prix/description)
+// Product IDs templates (on surcharge label/qty/prix/description à chaque devis)
 // ---------------------------------------------------------------------------
 
-const PRODUCT_ID_FILET = 14369303;
+const PRODUCT_ID_FILET = 14369303;    // **** - *x* m - Filet... → quantité en m²
+const PRODUCT_ID_GENERIC = 16822267;  // **** - Produit / Accessoire / Transport → quantité en pièce
 
 // ---------------------------------------------------------------------------
 
@@ -160,9 +161,11 @@ async function main() {
       discount: l.discount,
     };
 
-    // Rattacher au produit filet template pour les lignes produit
+    // Rattacher au bon produit template selon le type de ligne
     if (lineType === 'product') {
       line.product_id = l.productId ?? l.product_id ?? PRODUCT_ID_FILET;
+    } else {
+      line.product_id = l.productId ?? l.product_id ?? PRODUCT_ID_GENERIC;
     }
 
     return line;
