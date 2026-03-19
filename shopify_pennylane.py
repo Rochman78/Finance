@@ -301,6 +301,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
     total_gross  = 0.0
     total_fees   = 0.0
     client_lines = []
+    skipped_details = []
 
     for txn in transactions:
         source_type     = txn.get("source_type", "")
@@ -309,16 +310,19 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         fee             = float(txn.get("fee", "0"))
 
         if source_type not in ("charge", "refund") or not source_order_id:
+            skipped_details.append(f"type={source_type}")
             continue
 
         order = get_order(shopify_token, store_url, source_order_id)
         if not order:
+            skipped_details.append(f"order_id={source_order_id} introuvable Shopify")
             continue
 
         order_name   = re.sub(r'[#\-]', '', order.get("name", ""))
         invoice_info = invoice_index.get(order_name)
         if not invoice_info:
             log.warning(f"   ⚠️  Commande {order_name} non trouvée dans les factures")
+            skipped_details.append(f"{order_name} pas de facture")
             continue
 
         customer_id   = invoice_info.get("customer_id")
@@ -330,6 +334,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         ledger_account_id = customer.get("ledger_account_id") if customer else None
         if not ledger_account_id:
             log.warning(f"   ⚠️  Pas de compte auxiliaire pour {customer_name}")
+            skipped_details.append(f"{order_name} pas de compte aux. ({customer_name})")
             continue
 
         fee_abs = abs(fee)
@@ -403,9 +408,9 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         return {"success": False, "error": "Échec création Pennylane"}
 
     if not lines:
-        skipped = len([t for t in transactions if t.get("source_type") not in ("charge", "refund") or not t.get("source_order_id")])
-        log.warning(f"   ⚠️  Aucune ligne générée — {len(transactions)} transaction(s), {skipped} ignorée(s) (type/id)")
-        return {"success": False, "error": f"Aucune ligne générée ({len(transactions)} txn, {skipped} ignorées)"}
+        detail_str = "; ".join(skipped_details) if skipped_details else "raison inconnue"
+        log.warning(f"   ⚠️  Aucune ligne générée — {len(transactions)} txn, {len(skipped_details)} ignorée(s): {detail_str}")
+        return {"success": False, "error": f"Aucune ligne générée ({len(transactions)} txn, {len(skipped_details)} ignorées: {detail_str})"}
 
     # Use actual payout amount for the treasury line to match the real bank transfer
     # Adjust for any unmatched difference (skipped orders, adjustments, disputes)
