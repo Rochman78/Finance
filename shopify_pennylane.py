@@ -318,7 +318,10 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
             skipped_details.append(f"order_id={source_order_id} introuvable Shopify")
             continue
 
-        order_name   = re.sub(r'[#\-]', '', order.get("name", ""))
+        raw_name   = re.sub(r'[#\-]', '', order.get("name", ""))
+        # Normalise : garder uniquement préfixe lettres + chiffres (ignorer suffixe comme "R")
+        m_name = re.match(r'([A-Za-z]{0,5}\d+)', raw_name)
+        order_name = m_name.group(1).upper() if m_name else raw_name.upper()
         invoice_info = invoice_index.get(order_name)
         if not invoice_info:
             log.warning(f"   ⚠️  Commande {order_name} non trouvée dans les factures")
