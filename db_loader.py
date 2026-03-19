@@ -228,10 +228,14 @@ def extract_order_number(special_mention: str, label: str) -> str | None:
     return None
 
 
-def load_invoices_from_pennylane(date_from: str) -> int:
-    log.info(f"📋 Chargement des factures Pennylane depuis {date_from}...")
-    filter_param = json.dumps([{"field": "date", "operator": "gteq", "value": date_from}])
-    invoices     = pl_get_all("customer_invoices", {"filter": filter_param})
+def load_invoices_from_pennylane(date_from: str = None) -> int:
+    if date_from:
+        log.info(f"📋 Chargement des factures Pennylane mises à jour depuis {date_from}...")
+        filter_param = json.dumps([{"field": "updated_at", "operator": "gteq", "value": date_from}])
+        invoices = pl_get_all("customer_invoices", {"filter": filter_param})
+    else:
+        log.info("📋 Chargement complet des factures Pennylane...")
+        invoices = pl_get_all("customer_invoices")
     log.info(f"   → {len(invoices)} facture(s) récupérée(s)")
 
     rows = []
@@ -313,11 +317,11 @@ def main():
     log.info(f"📅 Date de départ : {date_from}")
 
     try:
-        total_invoices  = load_invoices_from_pennylane(date_from)
-        # En mode cron : ne charger que les clients modifiés depuis date_from
-        # En mode full : charger tous les clients (date_from=None)
-        customer_date = date_from if args.cron else None
-        total_customers = load_customers_from_pennylane(customer_date)
+        # En mode cron : ne charger que les éléments modifiés depuis date_from
+        # En mode full : tout charger (date_from=None)
+        incremental_date = date_from if args.cron else None
+        total_invoices  = load_invoices_from_pennylane(incremental_date)
+        total_customers = load_customers_from_pennylane(incremental_date)
         set_meta("last_sync", datetime.now(timezone.utc).isoformat())
     except Exception as e:
         log.error(f"❌ Erreur : {e}", exc_info=True)
