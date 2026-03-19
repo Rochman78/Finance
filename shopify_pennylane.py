@@ -315,7 +315,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         if not order:
             continue
 
-        order_name   = order.get("name", "").replace("#", "")
+        order_name   = re.sub(r'[#\-]', '', order.get("name", ""))
         invoice_info = invoice_index.get(order_name)
         if not invoice_info:
             log.warning(f"   ⚠️  Commande {order_name} non trouvée dans les factures")
@@ -403,7 +403,9 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         return {"success": False, "error": "Échec création Pennylane"}
 
     if not lines:
-        return {"success": False, "error": "Aucune ligne générée"}
+        skipped = len([t for t in transactions if t.get("source_type") not in ("charge", "refund") or not t.get("source_order_id")])
+        log.warning(f"   ⚠️  Aucune ligne générée — {len(transactions)} transaction(s), {skipped} ignorée(s) (type/id)")
+        return {"success": False, "error": f"Aucune ligne générée ({len(transactions)} txn, {skipped} ignorées)"}
 
     # Use actual payout amount for the treasury line to match the real bank transfer
     # Adjust for any unmatched difference (skipped orders, adjustments, disputes)
