@@ -210,14 +210,21 @@ def extract_order_number(special_mention: str, label: str) -> str | None:
     for text in [special_mention, label]:
         if not text:
             continue
-        match = re.search(r'(?:Commande|Order|Bestellung)\s+#?([A-Za-z]{2,5}\d{3,6})', text)
+        # Match with keyword (FR/EN/DE/IT/ES/NL) + optional dash between prefix and digits
+        match = re.search(
+            r'(?:Commande|Order|Bestellung|Ordine|Pedido|Bestelling)\s+#?([A-Za-z]{2,5})-?(\d{3,6})', text)
         if match:
-            return match.group(1).upper()
-        matches = re.findall(r'#?([A-Z]{2,5}\d{3,6})', text.upper())
+            return (match.group(1) + match.group(2)).upper()
+        # Fallback: keyword + plain numeric order number (no letter prefix)
+        match = re.search(
+            r'(?:Commande|Order|Bestellung|Ordine|Pedido|Bestelling)\s+#?(\d{4,6})', text)
+        if match:
+            return match.group(1)
+        # Fallback: letter prefix + optional dash + digits (no keyword needed)
+        matches = re.findall(r'#?([A-Z]{2,5})-?(\d{3,6})', text.upper())
         for m in matches:
-            digits = re.search(r'\d+', m)
-            if digits and len(digits.group()) >= 3:
-                return m
+            if len(m[1]) >= 3:
+                return m[0] + m[1]
     return None
 
 
