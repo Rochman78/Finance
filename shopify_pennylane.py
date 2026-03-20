@@ -465,7 +465,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
 # =============================================================
 # BOUCLE PRINCIPALE
 # =============================================================
-def run(target_date: str, test_mode: bool, store_filter: str | None = None):
+def run(target_date: str, test_mode: bool, store_filter: str | None = None, force: bool = False):
     log.info(f"\n{'#'*60}")
     log.info(f"🚀 Shopify → Pennylane | {target_date} | Test: {test_mode}")
     log.info(f"{'#'*60}")
@@ -503,7 +503,10 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None):
             continue
 
         payouts = get_payouts(token, store_config["store"], target_date, target_date)
-        new_payouts = [p for p in payouts if not is_payout_processed(sname, p["id"])]
+        if force:
+            new_payouts = payouts
+        else:
+            new_payouts = [p for p in payouts if not is_payout_processed(sname, p["id"])]
 
         if not new_payouts:
             log.info(f"[{sname}] Aucun nouveau versement")
@@ -562,6 +565,7 @@ def main():
     parser.add_argument("--test",  action="store_true", help="Mode test (simulation)")
     parser.add_argument("--cron",  action="store_true", help="Mode cron (hier, production)")
     parser.add_argument("--store", help="Filtrer une boutique (ex: LFC)")
+    parser.add_argument("--force", action="store_true", help="Ignorer processed_payouts et retraiter")
     args = parser.parse_args()
 
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -578,8 +582,12 @@ def main():
         test_mode = args.test
         dates = [args.date or yesterday]
 
+    force = getattr(args, 'force', False)
+    if force:
+        log.info("⚡ Mode FORCE — les versements déjà traités seront reprocessés")
+
     for target_date in dates:
-        run(target_date, test_mode, store_filter=args.store)
+        run(target_date, test_mode, store_filter=args.store, force=force)
 
 
 if __name__ == "__main__":
