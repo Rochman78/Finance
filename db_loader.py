@@ -206,8 +206,12 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
 # =============================================================
 # PENNYLANE — Factures
 # =============================================================
-def extract_order_number(special_mention: str, label: str) -> str | None:
-    for text in [special_mention, label]:
+def extract_order_number(*fields: str) -> str | None:
+    """Extract order number from any number of text fields.
+
+    Tries multiple patterns against each non-empty field until a match is found.
+    """
+    for text in fields:
         if not text:
             continue
         # Match with keyword (FR/EN/DE/IT/ES/NL) + optional dash between prefix and digits
@@ -228,6 +232,23 @@ def extract_order_number(special_mention: str, label: str) -> str | None:
     return None
 
 
+def _collect_string_values(obj, depth=0) -> list[str]:
+    """Recursively collect all non-empty string values from a dict/list."""
+    if depth > 3:
+        return []
+    values = []
+    if isinstance(obj, str):
+        if obj.strip():
+            values.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            values.extend(_collect_string_values(v, depth + 1))
+    elif isinstance(obj, list):
+        for item in obj:
+            values.extend(_collect_string_values(item, depth + 1))
+    return values
+
+
 def load_invoices_from_pennylane(date_from: str = None) -> int:
     if date_from:
         log.info(f"📋 Chargement des factures Pennylane mises à jour depuis {date_from}...")
@@ -238,12 +259,42 @@ def load_invoices_from_pennylane(date_from: str = None) -> int:
         invoices = pl_get_all("customer_invoices")
     log.info(f"   → {len(invoices)} facture(s) récupérée(s)")
 
+    # Diagnostic : affiche les clés de la première facture pour débugger
+    if invoices:
+        sample = invoices[0]
+        log.info(f"   🔍 Clés API facture : {sorted(sample.keys())}")
+        sm = sample.get("special_mention", "")
+        lbl = sample.get("label", "")
+        log.info(f"   🔍 Exemple special_mention={sm!r}, label={lbl!r}")
+
     rows = []
+    skipped = 0
     for inv in invoices:
+        # Try well-known fields first, then fall back to scanning all string values
         special_mention = inv.get("special_mention", "") or ""
         label           = inv.get("label", "") or ""
-        order_number    = extract_order_number(special_mention, label)
+        # Also check additional common fields that may contain order references
+        title           = inv.get("title", "") or ""
+        memo            = inv.get("memo", "") or ""
+        reference       = inv.get("reference", "") or ""
+        filename        = inv.get("filename", "") or inv.get("file_name", "") or ""
+
+        order_number = extract_order_number(
+            special_mention, label, title, memo, reference, filename,
+        )
+
+        # Last resort: scan ALL string values in the invoice object
         if not order_number:
+            all_strings = _collect_string_values(inv)
+            order_number = extract_order_number(*all_strings)
+
+        if not order_number:
+            skipped += 1
+            if skipped <= 3:
+                inv_num = inv.get("invoice_number", "?")
+                log.warning(f"   ⚠️  Facture {inv_num} : aucun numéro de commande trouvé")
+                if skipped == 1:
+                    log.warning(f"      Données brutes : {json.dumps(inv, ensure_ascii=False, default=str)[:500]}")
             continue
 
         customer      = inv.get("customer") or {}
@@ -266,6 +317,12 @@ def load_invoices_from_pennylane(date_from: str = None) -> int:
     rows_dedup = list({r[0]: r for r in rows}.values())
     count      = upsert_invoices(rows_dedup)
     log.info(f"   ✅ {len(rows)} facture(s) dont {len(rows_dedup)} order_number uniques ({count} modifiée(s) en DB)")
+
+    if skipped > 0:
+        log.warning(f"   ⚠️  {skipped}/{len(invoices)} factures ignorées (pas de numéro de commande extrait)")
+    if invoices and len(rows_dedup) == 0:
+        log.error(f"   ❌ AUCUNE facture extraite sur {len(invoices)} ! Vérifiez le format des factures Pennylane.")
+
     return len(rows_dedup)
 
 
