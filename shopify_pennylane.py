@@ -309,7 +309,9 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         amount          = float(txn.get("amount", "0"))
         fee             = float(txn.get("fee", "0"))
 
-        if source_type not in ("charge", "refund") or not source_order_id:
+        # Normalize source_type: Shopify may return "Payments::Refund" instead of "refund"
+        norm_type = source_type.rsplit("::", 1)[-1].lower() if source_type else ""
+        if norm_type not in ("charge", "refund") or not source_order_id:
             skipped_details.append(f"type={source_type}")
             continue
 
@@ -342,7 +344,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
 
         fee_abs = abs(fee)
 
-        if source_type == "charge":
+        if norm_type == "charge":
             total_gross += amount
             total_fees  += fee_abs
 
@@ -363,7 +365,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
                     "label":  f"{customer_name} - {order_name}",
                 })
 
-        elif source_type == "refund":
+        elif norm_type == "refund":
             refund_amount = abs(amount)
             total_gross -= refund_amount
             total_fees  -= fee_abs  # remboursement des frais
@@ -475,6 +477,11 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
     # Chargement DB (une seule fois)
     invoice_index = load_invoices()
     customers     = load_customers()
+
+    if not invoice_index:
+        log.error("❌ La table invoices est VIDE ! Exécutez d'abord : python db_loader.py --full")
+        telegram_send("🚨 <b>Shopify → Pennylane</b>\n❌ Table invoices vide — lancez db_loader.py --full")
+        return
 
     # Comptes Pennylane
     tresorerie_id = get_account_id(COMPTE_TRESORERIE)
