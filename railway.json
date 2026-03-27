@@ -1,1 +1,1 @@
-{"deploy":{"startCommand":"python shopify_pennylane.py --cron && python mollie_pennylane.py","cronSchedule":"0 1 * * *"}}
+{"deploy":{"startCommand":"python db_loader.py --cron && python shopify_pennylane.py --cron && python mollie_pennylane.py","cronSchedule":"0 1 * * *"}}
