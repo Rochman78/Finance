@@ -312,7 +312,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         # Normalize source_type: Shopify may return "Payments::Refund" instead of "refund"
         norm_type = source_type.rsplit("::", 1)[-1].lower() if source_type else ""
         if norm_type not in ("charge", "refund") or not source_order_id:
-            skipped_details.append(f"type={source_type}")
+            # Silently skip internal transaction types (payout, dispute, adjustment, etc.)
             continue
 
         order = get_order(shopify_token, store_url, source_order_id)
@@ -538,10 +538,8 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
                 total_err += 1
                 messages.append(f"❌ [{sname}] {result.get('error', '?')}")
 
-    if not any_payout:
-        telegram_send(f"ℹ️ <b>Shopify → Pennylane</b> | {target_date}\nAucun versement à traiter")
-    else:
-        status  = "✅" if total_err == 0 else ("⚠️" if total_ok > 0 else "🚨")
+    if any_payout and total_err > 0:
+        status  = "⚠️" if total_ok > 0 else "🚨"
         tg_msg  = (
             f"{status} <b>Shopify → Pennylane</b> | {target_date}\n"
             f"✅ {total_ok} versement(s)\n❌ {total_err} erreur(s)\n\n"

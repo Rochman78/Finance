@@ -220,7 +220,7 @@ def run(target_date: str, test_mode: bool, seuil: float):
     # Récupérer les comptes 411 clients
     accounts = get_411_accounts()
     if not accounts:
-        telegram_send(f"ℹ️ <b>Apurement 411</b> | {target_date}\nAucun compte 411 trouvé")
+        log.info(f"ℹ️ Apurement 411 | {target_date} — Aucun compte 411 trouvé")
         return
 
     # Calculer les soldes et filtrer
@@ -246,7 +246,6 @@ def run(target_date: str, test_mode: bool, seuil: float):
 
     if not small_balances:
         log.info("✅ Aucun écart à apurer")
-        telegram_send(f"✅ <b>Apurement 411</b> | {target_date}\nAucun écart ≤ {seuil}€ à apurer")
         return
 
     # Construire l'écriture globale
@@ -305,20 +304,8 @@ def run(target_date: str, test_mode: bool, seuil: float):
     result = create_ledger_entry(target_date, label, journal_id, lines, test_mode)
 
     # Résumé
-    details = [f"{item['number']} : {item['balance']:+.2f}€" for item in small_balances]
-    if result:
-        tg_msg = (
-            f"✅ <b>Apurement 411</b> | {target_date}\n"
-            f"🧹 {len(small_balances)} compte(s) apuré(s)\n"
-            f"📊 658: {total_658:.2f}€ | 758: {total_758:.2f}€\n\n"
-            + "\n".join(details[:20])
-        )
-        if test_mode:
-            tg_msg = "🧪 [TEST] " + tg_msg
-    else:
-        tg_msg = f"🚨 <b>Apurement 411</b> | {target_date}\n❌ Échec création écriture"
-
-    telegram_send(tg_msg)
+    if not result:
+        telegram_send(f"🚨 <b>Apurement 411</b> | {target_date}\n❌ Échec création écriture")
     log.info(f"\n🏁 {len(small_balances)} compte(s) apuré(s) — 658: {total_658:.2f}€ | 758: {total_758:.2f}€")
 
 # =============================================================
