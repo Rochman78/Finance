@@ -386,11 +386,6 @@ def main():
         return
 
     mode_label = "Chargement complet" if args.full else f"Sync {date_from}"
-    telegram_send(
-        f"✅ <b>DB Loader</b> — {mode_label}\n"
-        f"📋 {total_invoices} facture(s)\n"
-        f"👥 {total_customers} client(s)"
-    )
     log.info(f"\n🏁 DB Loader terminé — {total_invoices} factures | {total_customers} clients")
 
 

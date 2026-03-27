@@ -570,11 +570,9 @@ def main():
                 total_err += err
                 all_messages.extend(msgs)
 
-        # Notification Telegram
-        if not any_payout:
-            telegram_send(f"ℹ️ <b>Klarna → Pennylane</b> | {target_date}\nAucun payout à traiter")
-        else:
-            status = "✅" if total_err == 0 and total_ok > 0 else ("⚠️" if total_ok > 0 else "🚨")
+        # Notification Telegram (uniquement en cas d'erreur)
+        if any_payout and total_err > 0:
+            status = "⚠️" if total_ok > 0 else "🚨"
             tg_msg = (
                 f"{status} <b>Klarna → Pennylane</b> | {target_date}\n"
                 f"✅ {total_ok} écriture(s) créée(s)\n"

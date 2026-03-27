@@ -535,7 +535,7 @@ def run(target_date: str, test_mode: bool):
     settlements = get_settlements_for_date(target_date)
 
     if not settlements:
-        telegram_send(f"ℹ️ Mollie → Pennylane | {target_date}\nAucun settlement à traiter")
+        log.info(f"ℹ️ Mollie → Pennylane | {target_date} — Aucun settlement à traiter")
         return
 
     total_ok  = 0
@@ -562,8 +562,9 @@ def run(target_date: str, test_mode: bool):
         total_ok  += n_ok
         total_err += n_err
 
-    status = "✅" if total_err == 0 else ("⚠️" if total_ok > 0 else "🚨")
-    telegram_send(f"{status} Mollie → Pennylane | {target_date}\n✅ {total_ok} écriture(s)\n❌ {total_err} erreur(s)")
+    if total_err > 0:
+        status = "⚠️" if total_ok > 0 else "🚨"
+        telegram_send(f"{status} Mollie → Pennylane | {target_date}\n✅ {total_ok} écriture(s)\n❌ {total_err} erreur(s)")
     log.info(f"\n🏁 {target_date} : {total_ok} OK / {total_err} erreurs")
 
 # =============================================================
