@@ -369,7 +369,7 @@ def main():
     if args.full:
         date_from = FULL_LOAD_FROM
     else:
-        date_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        date_from = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
 
     log.info(f"📅 Date de départ : {date_from}")
 
