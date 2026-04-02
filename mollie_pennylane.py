@@ -363,9 +363,25 @@ def create_ledger_entry(date: str, label: str, lines: list, test_mode: bool, pie
             log.info(f"   D:{l['debit']:>10}  C:{l['credit']:>10}  {l['label']}")
         return True
 
+    full_label = f"{piece} | {label}" if piece else label
+
+    # Anti-doublon : vérifier si l'écriture existe déjà
+    filter_param = json.dumps([
+        {"field": "date", "operator": "eq", "value": date},
+        {"field": "journal_id", "operator": "eq", "value": journal_id},
+    ])
+    check = requests.get(f"{PENNYLANE_BASE_URL}/ledger_entries",
+                         headers={"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"},
+                         params={"filter": filter_param, "per_page": 100}, timeout=30)
+    if check.status_code == 200:
+        for entry in check.json().get("items", []):
+            if entry.get("label") == full_label:
+                log.warning(f"⚠️  Écriture déjà existante, skip : {label}")
+                return True
+
     payload = {
         "date":               date,
-        "label":              f"{piece} | {label}" if piece else label,
+        "label":              full_label,
         "journal_id":         journal_id,
         "ledger_entry_lines": resolved_lines,
     }
