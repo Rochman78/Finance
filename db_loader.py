@@ -255,9 +255,30 @@ def load_invoices_from_pennylane(date_from: str = None) -> int:
         filter_param = json.dumps([{"field": "updated_at", "operator": "gteq", "value": date_from}])
         invoices = pl_get_all("customer_invoices", {"filter": filter_param})
     else:
-        log.info("📋 Chargement complet des factures Pennylane...")
-        invoices = pl_get_all("customer_invoices")
-    log.info(f"   → {len(invoices)} facture(s) récupérée(s)")
+        # Chargement complet par mois pour éviter les limites de pagination API
+        log.info("📋 Chargement complet des factures Pennylane (mois par mois)...")
+        invoices = []
+        d = datetime.strptime(FULL_LOAD_FROM, "%Y-%m-%d")
+        today = datetime.now(timezone.utc)
+        while d <= today:
+            # Début et fin du mois
+            month_start = d.strftime("%Y-%m-%d")
+            if d.month == 12:
+                next_month = d.replace(year=d.year + 1, month=1, day=1)
+            else:
+                next_month = d.replace(month=d.month + 1, day=1)
+            month_end = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            filter_param = json.dumps([
+                {"field": "date", "operator": "gteq", "value": month_start},
+                {"field": "date", "operator": "lteq", "value": month_end},
+            ])
+            batch = pl_get_all("customer_invoices", {"filter": filter_param})
+            log.info(f"   📅 {month_start[:7]} : {len(batch)} facture(s)")
+            invoices.extend(batch)
+            d = next_month
+
+    log.info(f"   → {len(invoices)} facture(s) récupérée(s) au total")
 
     # Diagnostic : affiche les clés de la première facture pour débugger
     if invoices:
