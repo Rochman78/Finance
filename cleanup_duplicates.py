@@ -18,6 +18,7 @@ import time
 import logging
 import argparse
 import requests
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 PENNYLANE_TOKEN = os.environ.get("PENNYLANE_TOKEN", "")
@@ -86,8 +87,18 @@ def main():
         sys.exit(1)
 
     log.info(f"Recherche des doublons du {args.date_from} au {args.date_to} (journal {args.journal})...")
-    entries = pl_get_all_entries(args.date_from, args.date_to, journal_id)
-    log.info(f"{len(entries)} écriture(s) trouvée(s)")
+    # Load day-by-day to avoid Pennylane pagination limits
+    entries = []
+    d = datetime.strptime(args.date_from, "%Y-%m-%d")
+    end = datetime.strptime(args.date_to, "%Y-%m-%d")
+    while d <= end:
+        day_str = d.strftime("%Y-%m-%d")
+        batch = pl_get_all_entries(day_str, day_str, journal_id)
+        if batch:
+            log.info(f"  {day_str}: {len(batch)} écriture(s)")
+        entries.extend(batch)
+        d += timedelta(days=1)
+    log.info(f"{len(entries)} écriture(s) trouvée(s) au total")
 
     # Grouper par (label, date)
     groups = defaultdict(list)
