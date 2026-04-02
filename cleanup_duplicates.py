@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Supprime les écritures comptables en doublon dans Pennylane.
+Identifie les écritures comptables en doublon dans Pennylane.
 Garde la PREMIÈRE écriture pour chaque combinaison (label, date),
-supprime les suivantes.
+liste les suivantes à supprimer manuellement dans l'interface Pennylane.
+
+Note : L'API Pennylane ne propose pas d'endpoint DELETE pour les écritures.
+       La suppression doit se faire via l'interface web.
 
 Usage :
-  python cleanup_duplicates.py --from 2026-03-26 --to 2026-04-01          # Affiche les doublons
-  python cleanup_duplicates.py --from 2026-03-26 --to 2026-04-01 --delete # Supprime les doublons
+  python cleanup_duplicates.py --from 2026-03-26 --to 2026-04-01
 """
 
 import os
@@ -71,25 +73,10 @@ def get_journal_id(code: str) -> int | None:
     return None
 
 
-def delete_entry(entry_id: int) -> bool:
-    for attempt in range(3):
-        resp = requests.delete(f"{PL_BASE}/ledger_entries/{entry_id}",
-                               headers=PL_HEADERS, timeout=30)
-        if resp.status_code in (200, 204):
-            return True
-        if resp.status_code == 429:
-            time.sleep(min(2 ** attempt, 5))
-            continue
-        log.error(f"Erreur suppression {entry_id}: {resp.status_code} {resp.text[:200]}")
-        return False
-    return False
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Nettoyage doublons Pennylane")
+    parser = argparse.ArgumentParser(description="Identification doublons Pennylane")
     parser.add_argument("--from", dest="date_from", required=True, help="Date début YYYY-MM-DD")
     parser.add_argument("--to", dest="date_to", required=True, help="Date fin YYYY-MM-DD")
-    parser.add_argument("--delete", action="store_true", help="Supprimer les doublons (sans ce flag, affiche seulement)")
     parser.add_argument("--journal", default=JOURNAL_CODE, help=f"Code journal (défaut: {JOURNAL_CODE})")
     args = parser.parse_args()
 
@@ -112,9 +99,7 @@ def main():
     duplicates = []
     for (label, date), group in sorted(groups.items()):
         if len(group) > 1:
-            # Garder le premier (ID le plus bas), supprimer les autres
             group.sort(key=lambda e: e.get("id", 0))
-            keep = group[0]
             to_delete = group[1:]
             log.info(f"  DOUBLON: {label} | {date} — {len(group)} occurrences, {len(to_delete)} à supprimer")
             duplicates.extend(to_delete)
@@ -125,26 +110,18 @@ def main():
 
     log.info(f"\n{'='*60}")
     log.info(f"TOTAL: {len(duplicates)} écriture(s) en doublon à supprimer")
-
-    if not args.delete:
-        log.info("Mode simulation. Ajoutez --delete pour supprimer.")
-        return
-
-    log.info("Suppression en cours...")
-    ok = 0
-    err = 0
+    log.info(f"{'='*60}")
+    log.info("")
+    log.info("L'API Pennylane ne permet pas de supprimer les écritures via API.")
+    log.info("Supprimez-les manuellement dans Pennylane > Comptabilité > Écritures.")
+    log.info("")
+    log.info(f"{'ID':<12} {'DATE':<12} {'LABEL'}")
+    log.info(f"{'-'*12} {'-'*12} {'-'*50}")
     for entry in duplicates:
-        eid = entry.get("id")
+        eid = entry.get("id", "?")
+        date = entry.get("date", "?")
         label = entry.get("label", "?")
-        if delete_entry(eid):
-            log.info(f"  ✅ Supprimé: {eid} | {label}")
-            ok += 1
-        else:
-            log.error(f"  ❌ Échec: {eid} | {label}")
-            err += 1
-        time.sleep(0.3)  # Rate limiting
-
-    log.info(f"\n🏁 {ok} supprimée(s), {err} erreur(s)")
+        log.info(f"{eid:<12} {date:<12} {label}")
 
 
 if __name__ == "__main__":
