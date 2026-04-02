@@ -258,7 +258,7 @@ def load_invoices_from_pennylane(date_from: str = None) -> int:
         # Chargement complet par mois pour éviter les limites de pagination API
         log.info("📋 Chargement complet des factures Pennylane (mois par mois)...")
         invoices = []
-        d = datetime.strptime(FULL_LOAD_FROM, "%Y-%m-%d")
+        d = datetime.strptime(FULL_LOAD_FROM, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         today = datetime.now(timezone.utc)
         while d <= today:
             # Début et fin du mois
