@@ -577,7 +577,9 @@ def main():
 
     if args.cron:
         test_mode = False
-        dates = [yesterday]
+        # Fenêtre de 3 jours : retente les payouts échoués (factures créées en retard)
+        three_days_ago = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+        dates = date_range(three_days_ago, yesterday)
     elif args.from_date:
         test_mode = args.test
         end = args.date or yesterday
