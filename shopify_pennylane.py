@@ -425,7 +425,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
                 "label":  f"Ajustement Shopify {payout_date}",
             },
         ]
-        label  = f"Versement Shopify Payments {payout_date} [{store_name}]"
+        label  = f"Versement Shopify Payments {payout_date} [{store_name}] {payout_amount:.2f}€"
         result = create_ledger_entry(payout_date, label, journal_id, all_lines, test_mode)
         if result:
             return {"success": True, "nb_clients": 0, "details": [f"Ajustement {payout_amount:.2f}€"]}
@@ -477,7 +477,7 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
         log.error(f"❌ Écriture déséquilibrée D:{total_d:.2f} C:{total_c:.2f}")
         return {"success": False, "error": f"Déséquilibre {abs(total_d-total_c):.2f}€"}
 
-    label  = f"Versement Shopify Payments {payout_date} [{store_name}]"
+    label  = f"Versement Shopify Payments {payout_date} [{store_name}] {payout_amount:.2f}€"
     result = create_ledger_entry(payout_date, label, journal_id, all_lines, test_mode)
     if result:
         return {"success": True, "nb_clients": len(client_lines), "details": client_lines}
