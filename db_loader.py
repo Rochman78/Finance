@@ -400,7 +400,9 @@ def main():
     if args.full:
         date_from = FULL_LOAD_FROM
     else:
-        date_from = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+        # 10 jours en arrière : les payouts Shopify peuvent inclure des commandes
+        # datées de 5-7 jours avant le payout, et on filtre par date de facture
+        date_from = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d")
 
     log.info(f"📅 Date de départ : {date_from}")
 
