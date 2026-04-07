@@ -713,6 +713,35 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     log.info(f"✅ [{sheet_name}] Écrit — colonne {col}, date {date_str}")
 
 
+def detect_missing_dates(max_days=5):
+    """
+    Lit la ligne 1 de la feuille REPORT SHOPIFY VENTES (référence)
+    et retourne la liste des dates manquantes dans les N derniers jours.
+    """
+    paris     = ZoneInfo("Europe/Paris")
+    yesterday = (datetime.now(paris) - timedelta(days=1)).date()
+
+    expected = set()
+    for i in range(1, max_days + 1):
+        d = (datetime.now(paris) - timedelta(days=i)).date()
+        expected.add(d.strftime("%d/%m/%Y"))
+
+    try:
+        svc    = get_sheets_service()
+        sheets = svc.spreadsheets()
+        row1   = sheets.values().get(
+            spreadsheetId=SHEET_ID,
+            range=f"'{SHEET_SHOPIFY}'!1:1",
+        ).execute().get("values", [[]])[0]
+
+        existing = {str(c).strip() for c in row1}
+        missing  = sorted(expected - existing, key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
+        return missing
+    except Exception as e:
+        log.error(f"Erreur détection dates manquantes : {e}")
+        return []
+
+
 # =============================================================
 # POINT D'ENTRÉE
 # =============================================================
@@ -810,6 +839,17 @@ def main():
             run_for_date(current, sheets_filter)
             current += timedelta(days=1)
     else:
+        # Auto-backfill : détecte les dates manquantes dans les 5 derniers jours
+        missing = detect_missing_dates(max_days=5)
+        if missing:
+            log.info(f"=== AUTO-BACKFILL : {len(missing)} date(s) manquante(s) détectée(s) : {missing} ===")
+            for date_str in missing:
+                d = datetime.strptime(date_str, "%d/%m/%Y").date()
+                log.info(f"\n{'='*50}")
+                log.info(f">>> Rattrapage : {date_str}")
+                log.info(f"{'='*50}")
+                run_for_date(d, sheets_filter)
+
         yesterday = datetime.now(paris) - timedelta(days=1)
         run_for_date(yesterday, sheets_filter)
 
