@@ -1,0 +1,63 @@
+name: Backfill Daily Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "Date de début (YYYY-MM-DD)"
+        required: true
+      backfill_to:
+        description: "Date de fin (YYYY-MM-DD, défaut: hier)"
+        required: false
+      sheets:
+        description: "Feuilles à traiter (shopify,gads,amazon,amazon-ads) — vide = toutes"
+        required: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        env:
+          SHOPIFY_SECRET_LFC: ${{ secrets.SHOPIFY_SECRET_LFC }}
+          SHOPIFY_SECRET_LVO: ${{ secrets.SHOPIFY_SECRET_LVO }}
+          SHOPIFY_SECRET_UNIV: ${{ secrets.SHOPIFY_SECRET_UNIV }}
+          SHOPIFY_SECRET_TZ: ${{ secrets.SHOPIFY_SECRET_TZ }}
+          SHOPIFY_SECRET_HET: ${{ secrets.SHOPIFY_SECRET_HET }}
+          SHOPIFY_SECRET_RED: ${{ secrets.SHOPIFY_SECRET_RED }}
+          SHOPIFY_SECRET_MTC: ${{ secrets.SHOPIFY_SECRET_MTC }}
+          SHOPIFY_SECRET_MO: ${{ secrets.SHOPIFY_SECRET_MO }}
+          SHOPIFY_SECRET_RETE: ${{ secrets.SHOPIFY_SECRET_RETE }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GADS_DEVELOPER_TOKEN: ${{ secrets.GADS_DEVELOPER_TOKEN }}
+          GADS_CLIENT_ID: ${{ secrets.GADS_CLIENT_ID }}
+          GADS_CLIENT_SECRET: ${{ secrets.GADS_CLIENT_SECRET }}
+          GADS_REFRESH_TOKEN: ${{ secrets.GADS_REFRESH_TOKEN }}
+          AMAZON_CLIENT_ID: ${{ secrets.AMAZON_CLIENT_ID }}
+          AMAZON_CLIENT_SECRET: ${{ secrets.AMAZON_CLIENT_SECRET }}
+          AMAZON_REFRESH_TOKEN: ${{ secrets.AMAZON_REFRESH_TOKEN }}
+          AMAZON_SELLER_ID: ${{ secrets.AMAZON_SELLER_ID }}
+          AMAZON_ADS_REFRESH_TOKEN: ${{ secrets.AMAZON_ADS_REFRESH_TOKEN }}
+        run: |
+          CMD="python daily_report.py --backfill ${{ github.event.inputs.backfill_from }}"
+          if [ -n "${{ github.event.inputs.backfill_to }}" ]; then
+            CMD="$CMD --to ${{ github.event.inputs.backfill_to }}"
+          fi
+          if [ -n "${{ github.event.inputs.sheets }}" ]; then
+            CMD="$CMD --sheets ${{ github.event.inputs.sheets }}"
+          fi
+          echo "Running: $CMD"
+          $CMD
