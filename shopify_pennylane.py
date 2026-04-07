@@ -199,11 +199,12 @@ def shopify_get(url: str, token: str, params: dict = None) -> dict | None:
     return None
 
 
-def get_payouts(shopify_token: str, store: str, date_min: str, date_max: str) -> list:
+def get_payouts(shopify_token: str, store: str, date_min: str, date_max: str = None) -> list:
     url  = f"https://{store}/admin/api/{SHOPIFY_API_VERSION}/shopify_payments/payouts.json"
-    # Ne pas filtrer par status : quand le cron tourne le lendemain,
-    # les payouts sont déjà "in_transit" ou "paid", plus "scheduled".
-    data = shopify_get(url, shopify_token, {"date_min": date_min, "date_max": date_max})
+    params = {"date_min": date_min}
+    if date_max:
+        params["date_max"] = date_max
+    data = shopify_get(url, shopify_token, params)
     return data.get("payouts", []) if data else []
 
 
@@ -486,9 +487,10 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
 # =============================================================
 # BOUCLE PRINCIPALE
 # =============================================================
-def run(target_date: str, test_mode: bool, store_filter: str | None = None, force: bool = False):
+def run(target_date: str, test_mode: bool, store_filter: str | None = None, force: bool = False, date_max: str = None):
+    date_label = f"{target_date} → {date_max}" if date_max else f"{target_date} → ∞"
     log.info(f"\n{'#'*60}")
-    log.info(f"🚀 Shopify → Pennylane | {target_date} | Test: {test_mode}")
+    log.info(f"🚀 Shopify → Pennylane | {date_label} | Test: {test_mode}")
     log.info(f"{'#'*60}")
 
     init_processed_payouts()
@@ -528,7 +530,7 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
         if not token:
             continue
 
-        payouts = get_payouts(token, store_config["store"], target_date, target_date)
+        payouts = get_payouts(token, store_config["store"], target_date, date_max)
         if force:
             new_payouts = payouts
         else:
@@ -560,28 +562,17 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
     if any_payout and total_err > 0:
         status  = "⚠️" if total_ok > 0 else "🚨"
         tg_msg  = (
-            f"{status} <b>Shopify → Pennylane</b> | {target_date}\n"
+            f"{status} <b>Shopify → Pennylane</b> | {date_label}\n"
             f"✅ {total_ok} versement(s)\n❌ {total_err} erreur(s)\n\n"
             + "\n".join(messages[:20])
         )
         telegram_send(tg_msg)
 
-    log.info(f"\n🏁 {target_date} : {total_ok} OK / {total_err} erreurs")
+    log.info(f"\n🏁 {date_label} : {total_ok} OK / {total_err} erreurs")
 
 # =============================================================
 # POINT D'ENTRÉE
 # =============================================================
-def date_range(start: str, end: str) -> list[str]:
-    """Génère la liste des dates YYYY-MM-DD de start à end inclus."""
-    d = datetime.strptime(start, "%Y-%m-%d")
-    d_end = datetime.strptime(end, "%Y-%m-%d")
-    dates = []
-    while d <= d_end:
-        dates.append(d.strftime("%Y-%m-%d"))
-        d += timedelta(days=1)
-    return dates
-
-
 def main():
     parser = argparse.ArgumentParser(description="Shopify Payments → Pennylane")
     parser.add_argument("--date",  help="Date cible YYYY-MM-DD (défaut: hier)")
@@ -596,26 +587,27 @@ def main():
 
     if args.cron:
         test_mode = False
-        # Fenêtre de 3 jours en arrière + aujourd'hui : traite les payouts du jour
-        # dès qu'ils sont visibles dans Shopify (scheduled, in_transit, paid)
+        # Récupère tous les payouts depuis J-3, sans date max :
+        # inclut les payouts programmés (scheduled) et déposés (paid/in_transit)
         three_days_ago = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        dates = date_range(three_days_ago, today)
+        date_min = three_days_ago
+        date_max = None
     elif args.from_date:
         test_mode = args.test
-        end = args.date or yesterday
-        dates = date_range(args.from_date, end)
-        log.info(f"📅 Rattrapage : {len(dates)} jour(s) du {dates[0]} au {dates[-1]}")
+        date_min = args.from_date
+        date_max = args.date or yesterday
+        log.info(f"📅 Rattrapage : {date_min} → {date_max}")
     else:
         test_mode = args.test
-        dates = [args.date or yesterday]
+        target = args.date or yesterday
+        date_min = target
+        date_max = target
 
     force = getattr(args, 'force', False)
     if force:
         log.info("⚡ Mode FORCE — les versements déjà traités seront reprocessés")
 
-    for target_date in dates:
-        run(target_date, test_mode, store_filter=args.store, force=force)
+    run(date_min, test_mode, store_filter=args.store, force=force, date_max=date_max)
 
 
 if __name__ == "__main__":
