@@ -596,9 +596,11 @@ def main():
 
     if args.cron:
         test_mode = False
-        # Fenêtre de 3 jours : retente les payouts échoués (factures créées en retard)
+        # Fenêtre de 3 jours en arrière + aujourd'hui : traite les payouts du jour
+        # dès qu'ils sont visibles dans Shopify (scheduled, in_transit, paid)
         three_days_ago = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
-        dates = date_range(three_days_ago, yesterday)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        dates = date_range(three_days_ago, today)
     elif args.from_date:
         test_mode = args.test
         end = args.date or yesterday
