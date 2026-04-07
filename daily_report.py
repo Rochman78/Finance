@@ -715,28 +715,49 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
 
 def detect_missing_dates(max_days=5):
     """
-    Lit la ligne 1 de la feuille REPORT SHOPIFY VENTES (référence)
-    et retourne la liste des dates manquantes dans les N derniers jours.
+    Lit la ligne 1 de chaque feuille de report et retourne un dict
+    {date_str: set de clés de feuilles manquantes} pour les N derniers jours.
     """
-    paris     = ZoneInfo("Europe/Paris")
-    yesterday = (datetime.now(paris) - timedelta(days=1)).date()
+    paris = ZoneInfo("Europe/Paris")
 
     expected = set()
     for i in range(1, max_days + 1):
         d = (datetime.now(paris) - timedelta(days=i)).date()
         expected.add(d.strftime("%d/%m/%Y"))
 
+    # Feuilles à vérifier : (clé sheets_filter, nom feuille Google Sheets)
+    sheet_checks = [
+        ("shopify", SHEET_SHOPIFY),
+        ("gads",    SHEET_GADS),
+        ("amazon",  SHEET_AMAZON),
+    ]
+
     try:
         svc    = get_sheets_service()
         sheets = svc.spreadsheets()
-        row1   = sheets.values().get(
-            spreadsheetId=SHEET_ID,
-            range=f"'{SHEET_SHOPIFY}'!1:1",
-        ).execute().get("values", [[]])[0]
 
-        existing = {str(c).strip() for c in row1}
-        missing  = sorted(expected - existing, key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
-        return missing
+        # {date_str: set de clés manquantes}
+        missing_map = {}
+
+        for key, sheet_name in sheet_checks:
+            try:
+                row1 = sheets.values().get(
+                    spreadsheetId=SHEET_ID,
+                    range=f"'{sheet_name}'!1:1",
+                ).execute().get("values", [[]])[0]
+                existing = {str(c).strip() for c in row1}
+            except Exception as e:
+                log.warning(f"[{sheet_name}] Impossible de lire la ligne 1 : {e}")
+                existing = set()
+
+            for d in expected:
+                if d not in existing:
+                    missing_map.setdefault(d, set()).add(key)
+
+        # Trier par date chronologique
+        sorted_dates = sorted(missing_map.keys(), key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
+        return [(d, missing_map[d]) for d in sorted_dates]
+
     except Exception as e:
         log.error(f"Erreur détection dates manquantes : {e}")
         return []
@@ -839,16 +860,16 @@ def main():
             run_for_date(current, sheets_filter)
             current += timedelta(days=1)
     else:
-        # Auto-backfill : détecte les dates manquantes dans les 5 derniers jours
+        # Auto-backfill : détecte les dates manquantes par feuille (5 derniers jours)
         missing = detect_missing_dates(max_days=5)
         if missing:
-            log.info(f"=== AUTO-BACKFILL : {len(missing)} date(s) manquante(s) détectée(s) : {missing} ===")
-            for date_str in missing:
+            log.info(f"=== AUTO-BACKFILL : {len(missing)} date(s) manquante(s) détectée(s) ===")
+            for date_str, missing_sheets in missing:
                 d = datetime.strptime(date_str, "%d/%m/%Y").date()
                 log.info(f"\n{'='*50}")
-                log.info(f">>> Rattrapage : {date_str}")
+                log.info(f">>> Rattrapage : {date_str} — feuilles : {', '.join(sorted(missing_sheets))}")
                 log.info(f"{'='*50}")
-                run_for_date(d, sheets_filter)
+                run_for_date(d, missing_sheets)
 
         yesterday = datetime.now(paris) - timedelta(days=1)
         run_for_date(yesterday, sheets_filter)
