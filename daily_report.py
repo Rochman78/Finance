@@ -9,11 +9,12 @@ Dépenses Amazon Ads J-1 par pays → Google Sheets (feuille "REPORT AMAZON ADS"
 import os
 import sys
 import logging
+import argparse
 import requests
 import time
 import gzip
 import json as json_mod
-from datetime import datetime, timedelta
+from datetime import datetime, date as date_type, timedelta
 from zoneinfo import ZoneInfo
 
 from google.oauth2 import service_account
@@ -656,6 +657,30 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     col     = col_letter(new_col)
     log.info(f"[{sheet_name}] Écriture dans la colonne {col}")
 
+    # Agrandir la feuille si la colonne dépasse la taille actuelle
+    sheet_meta = sheets.get(
+        spreadsheetId=SHEET_ID,
+        fields="sheets.properties"
+    ).execute()
+    for s in sheet_meta.get("sheets", []):
+        if s["properties"]["title"] == sheet_name:
+            current_cols = s["properties"]["gridProperties"]["columnCount"]
+            sheet_id     = s["properties"]["sheetId"]
+            if new_col >= current_cols:
+                cols_to_add = new_col - current_cols + 1
+                log.info(f"[{sheet_name}] Ajout de {cols_to_add} colonne(s) (limite atteinte)")
+                sheets.batchUpdate(
+                    spreadsheetId=SHEET_ID,
+                    body={"requests": [{
+                        "appendDimension": {
+                            "sheetId":   sheet_id,
+                            "dimension": "COLUMNS",
+                            "length":    cols_to_add,
+                        }
+                    }]}
+                ).execute()
+            break
+
     # Relit colonne A pour avoir l'ordre final
     col_a = sheets.values().get(
         spreadsheetId=SHEET_ID,
@@ -692,63 +717,101 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
 # POINT D'ENTRÉE
 # =============================================================
 
-def main():
-    paris     = ZoneInfo("Europe/Paris")
-    yesterday = datetime.now(paris) - timedelta(days=1)
-    date_str  = yesterday.strftime("%d/%m/%Y")
+def run_for_date(target_date, sheets_filter=None):
+    """Exécute le report pour une date donnée. sheets_filter : set de noms de feuilles à traiter, ou None = toutes."""
+    paris    = ZoneInfo("Europe/Paris")
+    day      = target_date if isinstance(target_date, datetime) else datetime(target_date.year, target_date.month, target_date.day, tzinfo=paris)
+    date_str = day.strftime("%d/%m/%Y")
+    date_min = day.replace(hour=0,  minute=0,  second=0,  microsecond=0).isoformat()
+    date_max = day.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+    date_api = day.strftime("%Y-%m-%d")
 
-    date_min = yesterday.replace(hour=0,  minute=0,  second=0,  microsecond=0).isoformat()
-    date_max = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-    date_api = yesterday.strftime("%Y-%m-%d")
+    run_all = sheets_filter is None
 
     # ── Shopify ──────────────────────────────────────────────
-    log.info(f"=== Shopify CA HT — {date_str} ===")
-    store_map      = {s["name"]: s for s in STORES}
-    shopify_result = {}
-
-    for name in STORE_ORDER:
-        shopify_result[name] = fetch_ca_ht(store_map[name], date_min, date_max)
-
-    log.info("--- Résultats Shopify ---")
-    for name, val in shopify_result.items():
-        log.info(f"  {name}: {val}")
-
-    write_report(SHEET_SHOPIFY, date_str, shopify_result, STORE_ORDER)
+    if run_all or "shopify" in sheets_filter:
+        log.info(f"=== Shopify CA HT — {date_str} ===")
+        store_map      = {s["name"]: s for s in STORES}
+        shopify_result = {}
+        for name in STORE_ORDER:
+            shopify_result[name] = fetch_ca_ht(store_map[name], date_min, date_max)
+        log.info("--- Résultats Shopify ---")
+        for name, val in shopify_result.items():
+            log.info(f"  {name}: {val}")
+        write_report(SHEET_SHOPIFY, date_str, shopify_result, STORE_ORDER)
 
     # ── Google Ads ───────────────────────────────────────────
-    log.info(f"=== Google Ads dépenses — {date_str} ===")
-    gads_map    = {s["name"]: s for s in GADS_STORES}
-    gads_result = {}
-
-    for name in STORE_ORDER:
-        gads_result[name] = fetch_gads_spend(gads_map[name]["customer_id"], date_api)
-
-    log.info("--- Résultats Google Ads ---")
-    for name, val in gads_result.items():
-        log.info(f"  {name}: {val} €")
-
-    write_report(SHEET_GADS, date_str, gads_result, STORE_ORDER)
+    if run_all or "gads" in sheets_filter:
+        log.info(f"=== Google Ads dépenses — {date_str} ===")
+        gads_map    = {s["name"]: s for s in GADS_STORES}
+        gads_result = {}
+        for name in STORE_ORDER:
+            gads_result[name] = fetch_gads_spend(gads_map[name]["customer_id"], date_api)
+        log.info("--- Résultats Google Ads ---")
+        for name, val in gads_result.items():
+            log.info(f"  {name}: {val} €")
+        write_report(SHEET_GADS, date_str, gads_result, STORE_ORDER)
 
     # ── Amazon ───────────────────────────────────────────────
-    log.info(f"=== Amazon CA HT — {date_str} ===")
-    amazon_result = fetch_amazon_ca_ht(date_api)
-
-    log.info("--- Résultats Amazon ---")
-    for name, val in amazon_result.items():
-        log.info(f"  {name}: {val} €")
-
-    write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER)
+    if run_all or "amazon" in sheets_filter:
+        log.info(f"=== Amazon CA HT — {date_str} ===")
+        amazon_result = fetch_amazon_ca_ht(date_api)
+        log.info("--- Résultats Amazon ---")
+        for name, val in amazon_result.items():
+            log.info(f"  {name}: {val} €")
+        write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER)
 
     # ── Amazon Ads ────────────────────────────────────────────
-    log.info(f"=== Amazon Ads dépenses — {date_str} ===")
-    amazon_ads_result = fetch_amazon_ads_spend(date_api)
+    if run_all or "amazon-ads" in sheets_filter:
+        log.info(f"=== Amazon Ads dépenses — {date_str} ===")
+        amazon_ads_result = fetch_amazon_ads_spend(date_api)
+        if amazon_ads_result:
+            log.info("--- Résultats Amazon Ads ---")
+            for name, val in amazon_ads_result.items():
+                log.info(f"  {name}: {val} €")
+            write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_MARKETPLACE_ORDER)
 
-    if amazon_ads_result:
-        log.info("--- Résultats Amazon Ads ---")
-        for name, val in amazon_ads_result.items():
-            log.info(f"  {name}: {val} €")
 
-        write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_MARKETPLACE_ORDER)
+def main():
+    parser = argparse.ArgumentParser(description="Daily report → Google Sheets")
+    parser.add_argument("--backfill", metavar="FROM", help="Rattrapage depuis une date (YYYY-MM-DD ou DD/MM/YYYY)")
+    parser.add_argument("--to", metavar="TO", help="Date de fin pour le backfill (défaut : hier)")
+    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads (défaut : toutes)")
+    args = parser.parse_args()
+
+    paris = ZoneInfo("Europe/Paris")
+    sheets_filter = None
+    if args.sheets:
+        sheets_filter = {s.strip().lower() for s in args.sheets.split(",")}
+
+    if args.backfill:
+        # Parse date de début
+        raw = args.backfill
+        try:
+            start = datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError:
+            start = datetime.strptime(raw, "%d/%m/%Y").date()
+
+        # Parse date de fin (défaut : hier)
+        if args.to:
+            try:
+                end = datetime.strptime(args.to, "%Y-%m-%d").date()
+            except ValueError:
+                end = datetime.strptime(args.to, "%d/%m/%Y").date()
+        else:
+            end = (datetime.now(paris) - timedelta(days=1)).date()
+
+        log.info(f"=== BACKFILL du {start} au {end} ===")
+        current = start
+        while current <= end:
+            log.info(f"\n{'='*50}")
+            log.info(f">>> Date : {current.strftime('%d/%m/%Y')}")
+            log.info(f"{'='*50}")
+            run_for_date(current, sheets_filter)
+            current += timedelta(days=1)
+    else:
+        yesterday = datetime.now(paris) - timedelta(days=1)
+        run_for_date(yesterday, sheets_filter)
 
     log.info("=== Terminé ===")
 
