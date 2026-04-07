@@ -252,15 +252,15 @@ def _collect_string_values(obj, depth=0) -> list[str]:
 def load_invoices_from_pennylane(date_from: str = None) -> int:
     if date_from:
         # Chargement incrémental jour par jour pour éviter les limites de pagination API
-        log.info(f"📋 Chargement des factures Pennylane mises à jour depuis {date_from} (jour par jour)...")
+        # Note : "updated_at" n'est plus autorisé depuis la migration API 2026, on utilise "date"
+        log.info(f"📋 Chargement des factures Pennylane depuis {date_from} (jour par jour)...")
         invoices = []
         d = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         today = datetime.now(timezone.utc)
         while d <= today:
             day_str = d.strftime("%Y-%m-%d")
             filter_param = json.dumps([
-                {"field": "updated_at", "operator": "gteq", "value": day_str},
-                {"field": "updated_at", "operator": "lt", "value": (d + timedelta(days=1)).strftime("%Y-%m-%d")},
+                {"field": "date", "operator": "eq", "value": day_str},
             ])
             batch = pl_get_all("customer_invoices", {"filter": filter_param})
             if batch:
@@ -361,26 +361,10 @@ def load_invoices_from_pennylane(date_from: str = None) -> int:
 
 
 def load_customers_from_pennylane(date_from: str = None) -> int:
-    if date_from:
-        # Chargement incrémental jour par jour pour éviter les limites de pagination API
-        log.info(f"👥 Chargement des clients Pennylane mis à jour depuis {date_from} (jour par jour)...")
-        customers = []
-        d = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        today = datetime.now(timezone.utc)
-        while d <= today:
-            day_str = d.strftime("%Y-%m-%d")
-            filter_param = json.dumps([
-                {"field": "updated_at", "operator": "gteq", "value": day_str},
-                {"field": "updated_at", "operator": "lt", "value": (d + timedelta(days=1)).strftime("%Y-%m-%d")},
-            ])
-            batch = pl_get_all("customers", {"filter": filter_param})
-            if batch:
-                log.info(f"   📅 {day_str} : {len(batch)} client(s)")
-            customers.extend(batch)
-            d += timedelta(days=1)
-    else:
-        log.info("👥 Chargement complet des clients Pennylane...")
-        customers = pl_get_all("customers")
+    # L'API Pennylane ne permet pas de filtrer les clients par date,
+    # on charge donc toujours la liste complète (upsert en DB)
+    log.info("👥 Chargement complet des clients Pennylane...")
+    customers = pl_get_all("customers")
     log.info(f"   → {len(customers)} client(s) récupéré(s)")
 
     rows = []
