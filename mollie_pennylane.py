@@ -370,14 +370,26 @@ def create_ledger_entry(date: str, label: str, lines: list, test_mode: bool, pie
         {"field": "date", "operator": "eq", "value": date},
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
-    check = requests.get(f"{PENNYLANE_BASE_URL}/ledger_entries",
-                         headers={"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"},
-                         params={"filter": filter_param, "limit": 100}, timeout=30)
-    if check.status_code == 200:
-        for entry in check.json().get("items", []):
-            if entry.get("label") == full_label:
-                log.warning(f"⚠️  Écriture déjà existante, skip : {label}")
-                return True
+    check_ok = False
+    for attempt in range(3):
+        check = requests.get(f"{PENNYLANE_BASE_URL}/ledger_entries",
+                             headers={"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"},
+                             params={"filter": filter_param, "limit": 100}, timeout=30)
+        if check.status_code == 200:
+            for entry in check.json().get("items", []):
+                if entry.get("label") == full_label:
+                    log.warning(f"⚠️  Écriture déjà existante, skip : {label}")
+                    return True
+            check_ok = True
+            break
+        if check.status_code == 429:
+            time.sleep(min(2 ** attempt, 10))
+            continue
+        log.error(f"❌ Vérification anti-doublon échouée : {check.status_code} {check.text[:200]}")
+        break
+    if not check_ok:
+        log.error(f"🚫 BLOQUÉ — impossible de vérifier les doublons, écriture NON créée : {label}")
+        return False
 
     payload = {
         "date":               date,

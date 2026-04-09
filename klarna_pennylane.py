@@ -15,6 +15,7 @@ Base PostgreSQL : même que shopify_pennylane.py (Railway)
 import os
 import sys
 import json
+import time
 import logging
 import requests
 import argparse
@@ -330,19 +331,28 @@ def grouper_par_commande(transactions: list, total_tax_amount: float) -> dict:
 # =============================================================
 # PENNYLANE — Création d'écriture
 # =============================================================
-def ledger_entry_exists(date_str: str, label: str, journal_id: int) -> bool:
-    """Vérifie si une écriture avec le même label et date existe déjà dans Pennylane."""
+def ledger_entry_exists(date_str: str, label: str, journal_id: int) -> bool | None:
+    """Vérifie si une écriture avec le même label et date existe déjà dans Pennylane.
+    Retourne True si doublon trouvé, False si aucun doublon, None si l'API est injoignable."""
     filter_param = json.dumps([
         {"field": "date", "operator": "eq", "value": date_str},
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
-    resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
-                        params={"filter": filter_param, "limit": 100}, timeout=30)
-    if resp.status_code == 200:
-        for entry in resp.json().get("items", []):
-            if entry.get("label") == label:
-                return True
-    return False
+    for attempt in range(3):
+        resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
+                            params={"filter": filter_param, "limit": 100}, timeout=30)
+        if resp.status_code == 200:
+            for entry in resp.json().get("items", []):
+                if entry.get("label") == label:
+                    return True
+            return False
+        if resp.status_code == 429:
+            time.sleep(min(2 ** attempt, 10))
+            continue
+        log.error(f"   ❌ Vérification anti-doublon échouée : {resp.status_code} {resp.text[:200]}")
+        return None
+    log.error("   ❌ Vérification anti-doublon échouée après 3 tentatives (rate limit)")
+    return None
 
 
 def create_ledger_entry(date_str: str, libelle: str, journal_id: int,
@@ -354,7 +364,11 @@ def create_ledger_entry(date_str: str, libelle: str, journal_id: int,
         return True
 
     # Anti-doublon : vérifier si l'écriture existe déjà
-    if ledger_entry_exists(date_str, libelle, journal_id):
+    check = ledger_entry_exists(date_str, libelle, journal_id)
+    if check is None:
+        log.error(f"   🚫 BLOQUÉ — impossible de vérifier les doublons, écriture NON créée : {libelle}")
+        return False
+    if check:
         log.warning(f"   ⚠️  Écriture déjà existante, skip : {libelle}")
         return True
 

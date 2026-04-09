@@ -264,19 +264,28 @@ def get_journal_id(code: str) -> int | None:
     return None
 
 
-def ledger_entry_exists(date: str, label: str, journal_id: int) -> bool:
-    """Vérifie si une écriture avec le même label et date existe déjà dans Pennylane."""
+def ledger_entry_exists(date: str, label: str, journal_id: int) -> bool | None:
+    """Vérifie si une écriture avec le même label et date existe déjà dans Pennylane.
+    Retourne True si doublon trouvé, False si aucun doublon, None si l'API est injoignable."""
     filter_param = json.dumps([
         {"field": "date", "operator": "eq", "value": date},
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
-    resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
-                        params={"filter": filter_param, "limit": 100}, timeout=30)
-    if resp.status_code == 200:
-        for entry in resp.json().get("items", []):
-            if entry.get("label") == label:
-                return True
-    return False
+    for attempt in range(3):
+        resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
+                            params={"filter": filter_param, "limit": 100}, timeout=30)
+        if resp.status_code == 200:
+            for entry in resp.json().get("items", []):
+                if entry.get("label") == label:
+                    return True
+            return False
+        if resp.status_code == 429:
+            time.sleep(min(2 ** attempt, 10))
+            continue
+        log.error(f"❌ Vérification anti-doublon échouée : {resp.status_code} {resp.text[:200]}")
+        return None
+    log.error("❌ Vérification anti-doublon échouée après 3 tentatives (rate limit)")
+    return None
 
 
 def create_ledger_entry(date: str, label: str, journal_id: int, lines: list, test_mode: bool) -> bool:
@@ -286,7 +295,11 @@ def create_ledger_entry(date: str, label: str, journal_id: int, lines: list, tes
             log.info(f"   {l.get('label',''):<50} D:{float(l.get('debit','0')):>10.2f}  C:{float(l.get('credit','0')):>10.2f}")
         return True
     # Anti-doublon : vérifier si l'écriture existe déjà
-    if ledger_entry_exists(date, label, journal_id):
+    check = ledger_entry_exists(date, label, journal_id)
+    if check is None:
+        log.error(f"🚫 BLOQUÉ — impossible de vérifier les doublons, écriture NON créée : {label}")
+        return False
+    if check:
         log.warning(f"⚠️  Écriture déjà existante, skip : {label}")
         return True
     payload = {"date": date, "label": label, "journal_id": journal_id, "ledger_entry_lines": lines}
