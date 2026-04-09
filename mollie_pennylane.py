@@ -283,7 +283,7 @@ def get_account_id(account_number: str) -> int | None:
     resp = requests.get(
         f"{PENNYLANE_BASE_URL}/ledger_accounts",
         headers={"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"},
-        params={"filter": filter_param, "per_page": 5},
+        params={"filter": filter_param, "limit": 5},
         timeout=15,
     )
     if resp.status_code == 200:
@@ -301,7 +301,7 @@ def get_journal_id(code: str) -> int | None:
         resp = requests.get(
             f"{PENNYLANE_BASE_URL}/journals",
             headers={"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"},
-            params={"per_page": 100},
+            params={"limit": 100},
             timeout=15,
         )
         _pl_journals_cache = resp.json().get("items", []) if resp.status_code == 200 else []
@@ -372,7 +372,7 @@ def create_ledger_entry(date: str, label: str, lines: list, test_mode: bool, pie
     ])
     check = requests.get(f"{PENNYLANE_BASE_URL}/ledger_entries",
                          headers={"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"},
-                         params={"filter": filter_param, "per_page": 100}, timeout=30)
+                         params={"filter": filter_param, "limit": 100}, timeout=30)
     if check.status_code == 200:
         for entry in check.json().get("items", []):
             if entry.get("label") == full_label:

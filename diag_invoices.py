@@ -44,7 +44,7 @@ print("=" * 60)
 
 filter_param = json.dumps([{"field": "date", "operator": "gteq", "value": date_from}])
 resp = requests.get(f"{PL_BASE}/customer_invoices", headers=PL_HEADERS,
-                    params={"per_page": 20, "filter": filter_param}, timeout=30)
+                    params={"limit": 20, "filter": filter_param}, timeout=30)
 
 if resp.status_code != 200:
     print(f"Erreur API: {resp.status_code} {resp.text[:300]}")

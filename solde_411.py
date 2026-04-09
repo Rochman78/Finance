@@ -79,7 +79,7 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
 
     while True:
         page += 1
-        p = {"per_page": 500}
+        p = {"limit": 500}
         if params:
             p.update(params)
         if cursor:
@@ -120,7 +120,7 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
         # Cursor pagination si supportée, sinon page-based
         if data.get("has_more") and data.get("next_cursor"):
             cursor = data["next_cursor"]
-        elif len(items) < int(p.get("per_page", 500)):
+        elif len(items) < int(p.get("limit", 500)):
             break  # dernière page (moins d'items que demandé)
 
     return all_items
@@ -135,7 +135,7 @@ def get_account_id(account_number: str) -> int | None:
         return _accounts_cache[account_number]
     filter_param = json.dumps([{"field": "number", "operator": "eq", "value": account_number}])
     resp = requests.get(f"{PL_BASE}/ledger_accounts", headers=PL_HEADERS,
-                        params={"filter": filter_param, "per_page": 5}, timeout=30)
+                        params={"filter": filter_param, "limit": 5}, timeout=30)
     if resp.status_code == 200:
         for item in resp.json().get("items", []):
             if item.get("number") == account_number and item.get("vat_rate") == "any":
@@ -151,7 +151,7 @@ def get_journal_id(code: str) -> int | None:
     if code in _journal_cache:
         return _journal_cache[code]
     resp = requests.get(f"{PL_BASE}/journals", headers=PL_HEADERS,
-                        params={"per_page": 100}, timeout=30)
+                        params={"limit": 100}, timeout=30)
     if resp.status_code == 200:
         for j in resp.json().get("items", []):
             if j.get("code", "").upper() == code.upper():
@@ -170,7 +170,7 @@ def ledger_entry_exists(date: str, label: str, journal_id: int) -> bool:
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
     resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
-                        params={"filter": filter_param, "per_page": 100}, timeout=30)
+                        params={"filter": filter_param, "limit": 100}, timeout=30)
     if resp.status_code == 200:
         for entry in resp.json().get("items", []):
             if entry.get("label") == label:

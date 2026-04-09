@@ -169,7 +169,7 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
 
     while True:
         page += 1
-        p = {"per_page": 100}
+        p = {"limit": 100}
         if params:
             p.update(params)
         if cursor:
