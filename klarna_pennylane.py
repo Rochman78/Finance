@@ -246,7 +246,7 @@ def get_journal_id(code: str):
         timeout=30
     )
     if resp.status_code == 200:
-        for j in resp.json().get("journals", []):
+        for j in resp.json().get("items", []):
             if j.get("code", "").upper() == code.upper():
                 _journal_cache[code] = j["id"]
                 log.info(f"   📓 Journal {code} → ID {j['id']}")
