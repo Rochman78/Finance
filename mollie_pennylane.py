@@ -46,7 +46,7 @@ PENNYLANE_BASE_URL = "https://app.pennylane.com/api/external/v2"
 # --- COMPTES COMPTABLES ---
 JOURNAL_CODE            = "ENCSP"
 COMPTE_MOLLIE           = "411MOLLIE"
-COMPTE_FRAIS            = "627001"
+COMPTE_FRAIS            = "62700102"
 COMPTE_CLIENT_FALLBACK  = "411NA"
 
 # --- BASE DE DONNÉES ---

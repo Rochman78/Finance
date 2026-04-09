@@ -50,7 +50,7 @@ PL_HEADERS      = {
 
 # --- COMPTES COMPTABLES ---
 COMPTE_KLARNA    = "411KLARNA"    # Tiers Klarna (trésorerie)
-COMPTE_FRAIS     = "627001"       # Frais Klarna
+COMPTE_FRAIS     = "62700101"     # Frais Klarna
 COMPTE_TVA_FRAIS = "44566"  # TVA sur frais
 JOURNAL_CODE     = "ENCSP"
 
