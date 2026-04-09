@@ -47,6 +47,7 @@ PL_HEADERS        = {"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type
 # --- COMPTES COMPTABLES ---
 COMPTE_TRESORERIE = "411INTERNET"
 COMPTE_FRAIS      = "627001"
+COMPTE_ECART      = "471"
 JOURNAL_CODE      = "ENCSP"
 
 # --- BASE DE DONNÉES ---
@@ -329,7 +330,7 @@ def create_ledger_entry(date: str, label: str, journal_id: int, lines: list, tes
 def process_payout(shopify_token: str, store_config: dict, payout: dict,
                    invoice_index: dict, customers: dict,
                    journal_id: int, tresorerie_id: int, frais_id: int,
-                   test_mode: bool) -> dict:
+                   ecart_id: int, test_mode: bool) -> dict:
     store_name = store_config["name"]
     store_url  = store_config["store"]
     payout_id  = payout["id"]
@@ -489,14 +490,18 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
     # If there's a difference due to unmatched orders, add a balancing line on fees account
     if abs(ecart) > 0.01:
         log.warning(f"   ⚠️  Écart {ecart:.2f}€ entre payout ({payout_amount:.2f}€) et commandes matchées ({matched_net:.2f}€)")
-        # Écart négatif = remboursements/ajustements non matchés → débit (réduit les crédits clients)
-        # Écart positif = montants non matchés côté charges → crédit
         all_lines.append({
-            "ledger_account_id": frais_id,
+            "ledger_account_id": ecart_id,
             "debit":  f"{abs(ecart):.2f}" if ecart < 0 else "0.00",
             "credit": f"{ecart:.2f}" if ecart > 0 else "0.00",
             "label":  f"Écart versement Shopify {payout_date}",
         })
+        telegram_send(
+            f"⚠️ <b>Écart Shopify [{store_name}]</b>\n"
+            f"Payout {payout_date} : {ecart:+.2f}€\n"
+            f"Payout: {payout_amount:.2f}€ | Matché: {matched_net:.2f}€\n"
+            f"→ Compte 471 (attente)"
+        )
 
     total_d = sum(float(l["debit"]) for l in all_lines)
     total_c = sum(float(l["credit"]) for l in all_lines)
@@ -533,8 +538,9 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
     # Comptes Pennylane
     tresorerie_id = get_account_id(COMPTE_TRESORERIE)
     frais_id      = get_account_id(COMPTE_FRAIS)
+    ecart_id      = get_account_id(COMPTE_ECART)
     journal_id    = get_journal_id(JOURNAL_CODE)
-    if not tresorerie_id or not frais_id or not journal_id:
+    if not tresorerie_id or not frais_id or not ecart_id or not journal_id:
         telegram_send("🚨 <b>Shopify → Pennylane</b>\n❌ Compte ou journal introuvable")
         return
 
@@ -574,7 +580,7 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
                 token, store_config, payout,
                 invoice_index, customers,
                 journal_id, tresorerie_id, frais_id,
-                test_mode
+                ecart_id, test_mode
             )
             if result and result.get("success"):
                 if not test_mode:
