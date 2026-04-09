@@ -107,8 +107,49 @@ def pl_get_account_id(number: str) -> int | None:
 # =============================================================
 # SHOPIFY — Frais réels par boutique
 # =============================================================
+def get_frais_shopify_fast(date_min: str, date_max: str) -> dict:
+    """Version rapide : frais agrégés par boutique et par jour, SANS appel GET /orders/{id}.
+    Retourne {store: {frais, nb_payouts, by_date: {date: {frais, nb_txns}}}}"""
+    result = {}
+    for store_config in STORES:
+        sname = store_config["name"]
+        token = get_shopify_token(store_config)
+        if not token:
+            result[sname] = {"frais": None, "nb_payouts": 0, "by_date": {}}
+            continue
+
+        url = f"https://{store_config['store']}/admin/api/{SHOPIFY_API_VERSION}/shopify_payments/payouts.json"
+        data = shopify_get(url, token, {"date_min": date_min, "date_max": date_max})
+        payouts = data.get("payouts", []) if data else []
+
+        total_frais = 0.0
+        by_date = {}
+        for payout in payouts:
+            pid = payout["id"]
+            pdate = payout["date"]
+            t_url = f"https://{store_config['store']}/admin/api/{SHOPIFY_API_VERSION}/shopify_payments/balance/transactions.json"
+            txns_data = shopify_get(t_url, token, {"payout_id": pid, "limit": 250})
+            txns = txns_data.get("transactions", []) if txns_data else []
+            for txn in txns:
+                if txn.get("type") == "payout":
+                    continue
+                fee = float(txn.get("fee") or 0)
+                if fee != 0:
+                    total_frais += abs(fee)
+                    if pdate not in by_date:
+                        by_date[pdate] = {"frais": 0.0, "nb_txns": 0}
+                    by_date[pdate]["frais"] += abs(fee)
+                    by_date[pdate]["nb_txns"] += 1
+
+        if payouts:
+            log.info(f"[{sname}] Frais Shopify : {total_frais:.2f}€ ({len(payouts)} payouts)")
+        result[sname] = {"frais": round(total_frais, 2), "nb_payouts": len(payouts), "by_date": by_date}
+    return result
+
+
 def get_frais_shopify_detail(date_min: str, date_max: str) -> dict:
-    """Retourne {store: {frais, nb_payouts, transactions: [{order_id, order_name, amount, fee}]}}"""
+    """Version détaillée : avec appel GET /orders/{id} pour chaque transaction (lent).
+    Retourne {store: {frais, nb_payouts, transactions: [{order_id, order_name, amount, fee}]}}"""
     result = {}
     for store_config in STORES:
         sname = store_config["name"]
@@ -135,7 +176,6 @@ def get_frais_shopify_detail(date_min: str, date_max: str) -> dict:
                 fee = float(txn.get("fee") or 0)
                 amount = float(txn.get("amount") or 0)
                 order_id = txn.get("source_order_id")
-                # Get order name
                 order_name = None
                 if order_id:
                     odata = shopify_get(
@@ -234,11 +274,13 @@ def get_pennylane_627_detail(date_min: str, date_max: str) -> dict:
             info = {"entry_id": entry["id"], "entry_label": entry_label,
                     "date": entry_date, "label": label, "debit": debit, "credit": credit, "net": net}
 
-            # Extract order ref from label
-            m = re.search(r'- ([A-Za-z]+\d{3,})', label)
+            # Extract order ref from label — match only known store prefixes
+            ORDER_PREFIXES = r'(?:LFC|RDC|HC|COCO|MO|RM|TZ|LVO|UNIV)'
+            m = re.search(ORDER_PREFIXES + r'\d{3,}', label, re.IGNORECASE)
             if m:
-                info["order_ref"] = m.group(1)
-                matched_orders.add(m.group(1))
+                ref = m.group(0).upper()
+                info["order_ref"] = ref
+                matched_orders.add(ref)
 
             # Catégoriser
             label_lower = label.lower()
