@@ -294,11 +294,12 @@ TELEGRAM_CHAT_ID
 | Klarna | v1 | `https://api.klarna.com/settlements/v1` | Basic auth |
 | Mollie | v2 | `https://api.mollie.com/v2` | Bearer token |
 
-**Limites connues de l'API Pennylane** :
-- Pagination : 20 résultats/page max (le paramètre `limit` est ignoré au-delà). Depuis avril 2026 `per_page` n'est plus accepté, utiliser `limit`
-- Filtres : `updated_at` supprimé depuis avril 2026, utiliser `date`
+**Migration API Pennylane 2026 (avril 2026)** :
+- Pagination : `per_page`/`page` remplacés par `limit`/`cursor` (cursor-based). L'ancien format renvoie un 400.
+- Filtres : `updated_at` supprimé, utiliser `date`
+- Réponses : les résultats sont dans la clé `"items"`, avec `"has_more"` et `"next_cursor"` pour la pagination
 - Pas d'endpoint DELETE pour les écritures comptables
-- Rate limit : 429 avec retry exponentiel
+- Rate limit : 429, géré avec retry exponentiel (backoff) dans tous les scripts
 
 ---
 
@@ -309,6 +310,9 @@ Trois niveaux de protection :
 1. **Table `processed_*`** (PostgreSQL) — chaque payout/settlement traité avec succès est enregistré. Les runs suivants le sautent (sauf `--force`).
 
 2. **`ledger_entry_exists()`** (API Pennylane) — avant toute création, vérifie si une écriture avec le même label + date + journal existe déjà. Le label inclut le montant pour différencier les payouts multiples du même jour.
+   - **Pagination complète** : parcourt toutes les pages via cursor (pas de limite à 100 résultats)
+   - **Fail-safe** : si l'API Pennylane ne répond pas (erreur, timeout, rate limit après 3 retries), l'écriture est **bloquée** (non créée). Principe : en cas de doute, ne pas créer.
+   - **Retry automatique** : backoff exponentiel sur les erreurs 429 (rate limit)
 
 3. **Validation d'équilibre** — toute écriture est vérifiée `sum(débits) == sum(crédits)` avant envoi. Rejetée si déséquilibrée.
 
