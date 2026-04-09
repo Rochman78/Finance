@@ -165,9 +165,17 @@ def get_frais_pennylane(date_min: str, date_max: str) -> float | None:
     # Pour chaque écriture, descend chercher les lignes et somme 627001
     total_frais = 0.0
     for entry in entries:
-        resp = requests.get(f"{PL_BASE}/ledger_entries/{entry['id']}", headers=PL_HEADERS, timeout=30)
-        if resp.status_code != 200:
-            log.error(f"❌ Pennylane ledger_entry {entry['id']}: {resp.status_code}")
+        resp = None
+        for attempt in range(3):
+            resp = requests.get(f"{PL_BASE}/ledger_entries/{entry['id']}", headers=PL_HEADERS, timeout=30)
+            if resp.status_code == 200:
+                break
+            if resp.status_code == 429:
+                time.sleep(min(2 ** attempt, 10))
+                continue
+            break
+        if not resp or resp.status_code != 200:
+            log.error(f"❌ Pennylane ledger_entry {entry['id']}: {resp.status_code if resp else 'no response'}")
             continue
         for line in resp.json().get("ledger_entry_lines", []):
             account_number = line.get("ledger_account", {}).get("number", "")
@@ -183,18 +191,16 @@ def get_frais_pennylane(date_min: str, date_max: str) -> float | None:
 def cadrage(date_min: str, date_max: str, store_filter: str | None = None):
     log.info(f"=== Cadrage frais Shopify Payments — {date_min} → {date_max} ===")
 
-    stores = [s for s in STORES if not store_filter or s["name"] == store_filter]
-
-    # 1. Frais Shopify par boutique
+    # 1. Frais Shopify — toujours toutes les boutiques, --store filtre l'affichage
     resultats   = []
     total_shopify = 0.0
-    for store_config in stores:
+    for store_config in STORES:
         r = get_frais_shopify(store_config, date_min, date_max)
         resultats.append(r)
         if r.get("frais") is not None:
             total_shopify += r["frais"]
 
-    # 2. Frais Pennylane (627001, ENCSP)
+    # 2. Frais Pennylane (627001, ENCSP) — toujours global, pas de filtre boutique
     total_pennylane = get_frais_pennylane(date_min, date_max)
     if total_pennylane is None:
         log.error("❌ Impossible de récupérer les frais Pennylane")
@@ -210,7 +216,8 @@ def cadrage(date_min: str, date_max: str, store_filter: str | None = None):
     print("=" * 60)
     print(f"\n  {'Boutique':<10} {'Frais Shopify':>15} {'Payouts':>10}")
     print("  " + "-" * 38)
-    for r in resultats:
+    display = [r for r in resultats if not store_filter or r["store"] == store_filter]
+    for r in display:
         if r.get("frais") is None:
             print(f"  {r['store']:<10} {'ERREUR':>15} {'-':>10}")
         elif r["frais"] > 0:
