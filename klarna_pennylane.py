@@ -222,7 +222,7 @@ def get_account_id(account_number: str):
     resp = requests.get(
         f"{PL_BASE}/ledger_accounts",
         headers=PL_HEADERS,
-        params={"filter": filter_param, "per_page": 5},
+        params={"filter": filter_param, "limit": 5},
         timeout=30
     )
     if resp.status_code == 200:
@@ -241,7 +241,7 @@ def get_journal_id(code: str):
     resp = requests.get(
         f"{PL_BASE}/journals",
         headers=PL_HEADERS,
-        params={"per_page": 100},
+        params={"limit": 100},
         timeout=30
     )
     if resp.status_code == 200:
@@ -337,7 +337,7 @@ def ledger_entry_exists(date_str: str, label: str, journal_id: int) -> bool:
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
     resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
-                        params={"filter": filter_param, "per_page": 100}, timeout=30)
+                        params={"filter": filter_param, "limit": 100}, timeout=30)
     if resp.status_code == 200:
         for entry in resp.json().get("items", []):
             if entry.get("label") == label:

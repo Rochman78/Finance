@@ -71,7 +71,7 @@ Synchronise les factures et clients depuis Pennylane vers PostgreSQL. Les script
 
 **Extraction du numéro de commande** : regex appliquées sur `special_mention`, `label`, `filename` des factures Pennylane. Ex: `"Commande LFC30259\nFacture déjà payée"` → `LFC30259`.
 
-**Pagination** : l'API Pennylane cap à 20 résultats/page malgré `per_page=100`. Le script charge :
+**Pagination** : l'API Pennylane cap à 20 résultats/page malgré `limit=100`. Le script charge :
 - Mode `--full` : mois par mois (filtre `date`)
 - Mode `--cron` : jour par jour sur les 10 derniers jours (filtre `date`)
 
@@ -295,7 +295,7 @@ TELEGRAM_CHAT_ID
 | Mollie | v2 | `https://api.mollie.com/v2` | Bearer token |
 
 **Limites connues de l'API Pennylane** :
-- Pagination : 20 résultats/page max (le paramètre `per_page` est ignoré au-delà)
+- Pagination : 20 résultats/page max (le paramètre `limit` est ignoré au-delà). Depuis avril 2026 `per_page` n'est plus accepté, utiliser `limit`
 - Filtres : `updated_at` supprimé depuis avril 2026, utiliser `date`
 - Pas d'endpoint DELETE pour les écritures comptables
 - Rate limit : 429 avec retry exponentiel

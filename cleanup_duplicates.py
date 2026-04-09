@@ -40,7 +40,7 @@ def pl_get_all_entries(date_from: str, date_to: str, journal_id: int) -> list:
             {"field": "date", "operator": "lteq", "value": date_to},
             {"field": "journal_id", "operator": "eq", "value": journal_id},
         ])
-        p = {"per_page": 100, "filter": filter_param}
+        p = {"limit": 100, "filter": filter_param}
         if cursor:
             p["cursor"] = cursor
         for attempt in range(5):
@@ -66,7 +66,7 @@ def pl_get_all_entries(date_from: str, date_to: str, journal_id: int) -> list:
 
 def get_journal_id(code: str) -> int | None:
     resp = requests.get(f"{PL_BASE}/journals", headers=PL_HEADERS,
-                        params={"per_page": 100}, timeout=30)
+                        params={"limit": 100}, timeout=30)
     if resp.status_code == 200:
         for j in resp.json().get("items", []):
             if j.get("code", "").upper() == code.upper():
