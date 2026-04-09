@@ -26,21 +26,25 @@ with col3:
     st.write("")
     run = st.button("🚀 Lancer le cadrage", type="primary", use_container_width=True)
 
-if not run:
+# Stocker les résultats en session pour ne pas relancer les API à chaque interaction
+if run:
+    date_min_str = date_min.strftime("%Y-%m-%d")
+    date_max_str = date_max.strftime("%Y-%m-%d")
+    with st.spinner("Chargement des frais Shopify..."):
+        st.session_state["shopify_data"] = get_frais_shopify_detail(date_min_str, date_max_str)
+    with st.spinner("Chargement des écritures Pennylane..."):
+        st.session_state["pl_data"] = get_pennylane_627_detail(date_min_str, date_max_str)
+    st.session_state["date_min_str"] = date_min_str
+    st.session_state["date_max_str"] = date_max_str
+
+if "shopify_data" not in st.session_state:
     st.info("Sélectionnez une période et cliquez sur **Lancer le cadrage**")
     st.stop()
 
-date_min_str = date_min.strftime("%Y-%m-%d")
-date_max_str = date_max.strftime("%Y-%m-%d")
-
-# =============================================================
-# CHARGEMENT DES DONNÉES
-# =============================================================
-with st.spinner("Chargement des frais Shopify..."):
-    shopify_data = get_frais_shopify_detail(date_min_str, date_max_str)
-
-with st.spinner("Chargement des écritures Pennylane..."):
-    pl_data = get_pennylane_627_detail(date_min_str, date_max_str)
+shopify_data = st.session_state["shopify_data"]
+pl_data = st.session_state["pl_data"]
+date_min_str = st.session_state["date_min_str"]
+date_max_str = st.session_state["date_max_str"]
 
 lines = pl_data["lines_627"]
 
@@ -198,25 +202,138 @@ if pl_data["ecart_471"]:
     st.dataframe(df_471, use_container_width=True, hide_index=True)
 
 # =============================================================
+# DÉTAIL LIGNE À LIGNE — Shopify vs Pennylane
+# =============================================================
+st.markdown("---")
+st.subheader("🔍 Détail ligne à ligne — Shopify vs Pennylane")
+
+# Build Shopify index by order_name
+sp_by_order = {}
+for sname, sdata in shopify_data.items():
+    for txn in sdata.get("transactions", []):
+        oname = txn.get("order_name")
+        if oname:
+            sp_by_order[oname] = {
+                "store": sname,
+                "fee": txn["fee"],
+                "amount": txn["amount"],
+                "customer": txn.get("customer_name", "?"),
+                "payout_date": txn.get("payout_date", "?"),
+            }
+
+# Build Pennylane index by order_ref (sum if multiple lines for same order)
+pl_by_order = {}
+for line in lines["shopify"]:
+    ref = line.get("order_ref")
+    if ref:
+        if ref not in pl_by_order:
+            pl_by_order[ref] = {"fee": 0, "label": line["label"], "date": line["date"]}
+        pl_by_order[ref]["fee"] += line["net"]
+# Also include other categories that have order refs
+for cat in ["mollie", "klarna", "ecart", "autre"]:
+    for line in lines[cat]:
+        ref = line.get("order_ref")
+        if ref:
+            if ref not in pl_by_order:
+                pl_by_order[ref] = {"fee": 0, "label": line["label"], "date": line["date"], "cat": cat}
+            pl_by_order[ref]["fee"] += line["net"]
+
+# Merge all orders
+all_orders = sorted(set(list(sp_by_order.keys()) + list(pl_by_order.keys())))
+
+detail_rows = []
+for order in all_orders:
+    sp = sp_by_order.get(order)
+    plr = pl_by_order.get(order)
+
+    sp_fee = sp["fee"] if sp else 0
+    pl_fee = round(plr["fee"], 2) if plr else 0
+    ecart_line = round(sp_fee - pl_fee, 2)
+    store = sp["store"] if sp else "?"
+    client = sp["customer"] if sp else plr["label"].split(" - ")[0] if plr else "?"
+    payout_date = sp["payout_date"] if sp else (plr["date"] if plr else "?")
+
+    detail_rows.append({
+        "Commande": order,
+        "Boutique": store,
+        "Client": client,
+        "Date payout": payout_date,
+        "Frais Shopify": sp_fee,
+        "Frais Pennylane": pl_fee,
+        "Écart": ecart_line,
+        "Statut": "✅" if ecart_line == 0 else f"⚠️ {ecart_line:+.2f}€",
+    })
+
+if detail_rows:
+    df_lines = pd.DataFrame(detail_rows)
+
+    # Filters
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        filter_statut = st.radio("Filtrer", ["Toutes", "Écarts seulement"], horizontal=True)
+    with col_f2:
+        filter_store = st.selectbox("Boutique", ["Toutes"] + sorted(set(r["Boutique"] for r in detail_rows if r["Boutique"] != "?")))
+
+    df_display = df_lines.copy()
+    if filter_statut == "Écarts seulement":
+        df_display = df_display[df_display["Écart"] != 0]
+    if filter_store != "Toutes":
+        df_display = df_display[df_display["Boutique"] == filter_store]
+
+    # Color styling
+    def color_ecart(val):
+        if val == 0:
+            return "color: green"
+        return "color: red; font-weight: bold"
+
+    st.dataframe(
+        df_display.style.map(color_ecart, subset=["Écart"]),
+        use_container_width=True,
+        hide_index=True,
+        height=min(400, 35 * (len(df_display) + 1)),
+    )
+
+    # Summary under table
+    nb_ok = len(df_lines[df_lines["Écart"] == 0])
+    nb_ecart = len(df_lines[df_lines["Écart"] != 0])
+    total_sp_detail = df_lines["Frais Shopify"].sum()
+    total_pl_detail = df_lines["Frais Pennylane"].sum()
+
+    col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+    col_s1.metric("Lignes OK", f"{nb_ok}")
+    col_s2.metric("Lignes en écart", f"{nb_ecart}")
+    col_s3.metric("Total Shopify", f"{total_sp_detail:.2f} €")
+    col_s4.metric("Total Pennylane", f"{total_pl_detail:.2f} €")
+
+# =============================================================
 # EXPORT CSV
 # =============================================================
 st.markdown("---")
 st.subheader("Export")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     if rows:
         csv_boutiques = df_boutiques.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "📥 Télécharger détail boutiques (CSV)",
+            "📥 Détail boutiques (CSV)",
             csv_boutiques,
             f"cadrage_shopify_{date_min_str}_{date_max_str}.csv",
             "text/csv",
         )
 
 with col2:
-    # Full detail export
+    if detail_rows:
+        csv_lines = df_lines.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "📥 Ligne à ligne SP vs PL (CSV)",
+            csv_lines,
+            f"ligne_a_ligne_{date_min_str}_{date_max_str}.csv",
+            "text/csv",
+        )
+
+with col3:
     all_lines_data = []
     for cat, cat_lines in lines.items():
         for l in cat_lines:
@@ -234,7 +351,7 @@ with col2:
         df_detail = pd.DataFrame(all_lines_data)
         csv_detail = df_detail.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "📥 Télécharger détail lignes 627001 (CSV)",
+            "📥 Détail lignes 627001 (CSV)",
             csv_detail,
             f"detail_627001_{date_min_str}_{date_max_str}.csv",
             "text/csv",
