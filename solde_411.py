@@ -72,20 +72,20 @@ def telegram_send(msg: str):
 # =============================================================
 # PENNYLANE — Pagination
 # =============================================================
-def pl_get_all(endpoint: str, params: dict = None) -> list:
+def pl_get_all(endpoint: str, params: dict = None) -> list | None:
+    """Récupère toutes les pages d'un endpoint Pennylane via cursor pagination.
+    Retourne None en cas d'erreur (au lieu d'une liste partielle)."""
     all_items = []
     cursor    = None
-    page      = 0
+    fetches   = 0
 
     while True:
-        page += 1
+        fetches += 1
         p = {"limit": 500}
         if params:
             p.update(params)
         if cursor:
             p["cursor"] = cursor
-        else:
-            p["page"] = page  # fallback pagination par page
 
         for attempt in range(5):
             try:
@@ -103,10 +103,10 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
                 time.sleep(wait)
             else:
                 log.error(f"❌ GET {endpoint}: {resp.status_code} {resp.text}")
-                return all_items
+                return None
         else:
             log.error(f"❌ GET {endpoint}: échec après 5 tentatives")
-            return all_items
+            return None
 
         data  = resp.json()
         items = data.get("items", [])
@@ -114,14 +114,12 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
             break
         all_items.extend(items)
 
-        if page % 10 == 0:
-            log.info(f"   ... {len(all_items)} éléments ({endpoint}, page {page})")
+        if fetches % 10 == 0:
+            log.info(f"   ... {len(all_items)} éléments ({endpoint})")
 
-        # Cursor pagination si supportée, sinon page-based
-        if data.get("has_more") and data.get("next_cursor"):
-            cursor = data["next_cursor"]
-        elif len(items) < int(p.get("limit", 500)):
-            break  # dernière page (moins d'items que demandé)
+        if not data.get("has_more") or not data.get("next_cursor"):
+            break
+        cursor = data["next_cursor"]
 
     return all_items
 
@@ -165,26 +163,39 @@ def get_journal_id(code: str) -> int | None:
 # =============================================================
 def ledger_entry_exists(date: str, label: str, journal_id: int) -> bool | None:
     """Vérifie si une écriture avec le même label et date existe déjà dans Pennylane.
-    Retourne True si doublon trouvé, False si aucun doublon, None si l'API est injoignable."""
+    Retourne True si doublon trouvé, False si aucun doublon, None si l'API est injoignable.
+    Pagine avec cursor pour ne rater aucune écriture."""
     filter_param = json.dumps([
         {"field": "date", "operator": "eq", "value": date},
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
-    for attempt in range(3):
-        resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
-                            params={"filter": filter_param, "limit": 100}, timeout=30)
-        if resp.status_code == 200:
-            for entry in resp.json().get("items", []):
-                if entry.get("label") == label:
-                    return True
+    cursor = None
+    while True:
+        params = {"filter": filter_param, "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        for attempt in range(3):
+            resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
+                                params=params, timeout=30)
+            if resp.status_code == 200:
+                break
+            if resp.status_code == 429:
+                time.sleep(min(2 ** attempt, 10))
+                continue
+            log.error(f"❌ Vérification anti-doublon échouée : {resp.status_code} {resp.text[:200]}")
+            return None
+        else:
+            log.error("❌ Vérification anti-doublon échouée après 3 tentatives (rate limit)")
+            return None
+        data = resp.json()
+        for entry in data.get("items", []):
+            if entry.get("label") == label:
+                return True
+        if not data.get("has_more"):
             return False
-        if resp.status_code == 429:
-            time.sleep(min(2 ** attempt, 10))
-            continue
-        log.error(f"❌ Vérification anti-doublon échouée : {resp.status_code} {resp.text[:200]}")
-        return None
-    log.error("❌ Vérification anti-doublon échouée après 3 tentatives (rate limit)")
-    return None
+        cursor = data.get("next_cursor")
+        if not cursor:
+            return False
 
 
 def create_ledger_entry(date: str, label: str, journal_id: int, lines: list, test_mode: bool) -> bool:
@@ -216,6 +227,9 @@ def get_411_accounts(limit: int = 1000) -> list:
     """Récupère tous les comptes 411XXX puis ne garde que les `limit` plus récents (par ID desc)."""
     filter_param = json.dumps([{"field": "number", "operator": "start_with", "value": "411"}])
     accounts = pl_get_all("ledger_accounts", {"filter": filter_param})
+    if accounts is None:
+        log.error("❌ Impossible de récupérer les comptes 411 — arrêt")
+        return []
     # Exclure les comptes de transit
     filtered = [a for a in accounts if a.get("number") not in COMPTES_EXCLUS]
     # Garder les N plus récents (ID le plus élevé = le plus récent)
@@ -229,6 +243,9 @@ def get_account_balance(account_id: int) -> float:
     """Calcule le solde d'un compte en sommant toutes ses écritures."""
     filter_param = json.dumps([{"field": "ledger_account_id", "operator": "eq", "value": str(account_id)}])
     lines = pl_get_all("ledger_entry_lines", {"filter": filter_param})
+    if lines is None:
+        log.error(f"❌ Impossible de récupérer les écritures du compte {account_id} — solde indéterminé")
+        return None
     total_debit  = sum(float(l.get("debit", 0)) for l in lines)
     total_credit = sum(float(l.get("credit", 0)) for l in lines)
     return round(total_debit - total_credit, 2)
@@ -263,6 +280,9 @@ def run(target_date: str, test_mode: bool, seuil: float):
         acc_name   = acc.get("name", acc_number)
 
         balance = get_account_balance(acc_id)
+        if balance is None:
+            log.warning(f"   ⚠️ {acc_number} ({acc_name}) : solde indéterminé, skip")
+            continue
         if balance == 0:
             continue
         if abs(balance) <= seuil:

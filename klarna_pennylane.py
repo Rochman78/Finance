@@ -333,26 +333,39 @@ def grouper_par_commande(transactions: list, total_tax_amount: float) -> dict:
 # =============================================================
 def ledger_entry_exists(date_str: str, label: str, journal_id: int) -> bool | None:
     """Vérifie si une écriture avec le même label et date existe déjà dans Pennylane.
-    Retourne True si doublon trouvé, False si aucun doublon, None si l'API est injoignable."""
+    Retourne True si doublon trouvé, False si aucun doublon, None si l'API est injoignable.
+    Pagine avec cursor pour ne rater aucune écriture."""
     filter_param = json.dumps([
         {"field": "date", "operator": "eq", "value": date_str},
         {"field": "journal_id", "operator": "eq", "value": journal_id},
     ])
-    for attempt in range(3):
-        resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
-                            params={"filter": filter_param, "limit": 100}, timeout=30)
-        if resp.status_code == 200:
-            for entry in resp.json().get("items", []):
-                if entry.get("label") == label:
-                    return True
+    cursor = None
+    while True:
+        params = {"filter": filter_param, "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        for attempt in range(3):
+            resp = requests.get(f"{PL_BASE}/ledger_entries", headers=PL_HEADERS,
+                                params=params, timeout=30)
+            if resp.status_code == 200:
+                break
+            if resp.status_code == 429:
+                time.sleep(min(2 ** attempt, 10))
+                continue
+            log.error(f"   ❌ Vérification anti-doublon échouée : {resp.status_code} {resp.text[:200]}")
+            return None
+        else:
+            log.error("   ❌ Vérification anti-doublon échouée après 3 tentatives (rate limit)")
+            return None
+        data = resp.json()
+        for entry in data.get("items", []):
+            if entry.get("label") == label:
+                return True
+        if not data.get("has_more"):
             return False
-        if resp.status_code == 429:
-            time.sleep(min(2 ** attempt, 10))
-            continue
-        log.error(f"   ❌ Vérification anti-doublon échouée : {resp.status_code} {resp.text[:200]}")
-        return None
-    log.error("   ❌ Vérification anti-doublon échouée après 3 tentatives (rate limit)")
-    return None
+        cursor = data.get("next_cursor")
+        if not cursor:
+            return False
 
 
 def create_ledger_entry(date_str: str, libelle: str, journal_id: int,
