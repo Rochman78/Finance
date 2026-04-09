@@ -296,6 +296,7 @@ TELEGRAM_CHAT_ID
 
 **Migration API Pennylane 2026 (avril 2026)** :
 - Pagination : `per_page`/`page` remplacés par `limit`/`cursor` (cursor-based). L'ancien format renvoie un 400.
+- **`limit` max : 100** — toute valeur supérieure renvoie un 400. Les scripts utilisent `limit=100` partout.
 - Filtres : `updated_at` supprimé, utiliser `date`
 - Réponses : les résultats sont dans la clé `"items"`, avec `"has_more"` et `"next_cursor"` pour la pagination
 - Pas d'endpoint DELETE pour les écritures comptables
