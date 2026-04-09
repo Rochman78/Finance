@@ -81,7 +81,7 @@ def pl_get_all(endpoint: str, params: dict = None) -> list | None:
 
     while True:
         fetches += 1
-        p = {"limit": 500}
+        p = {"limit": 100}
         if params:
             p.update(params)
         if cursor:
