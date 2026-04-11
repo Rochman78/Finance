@@ -289,7 +289,7 @@ def get_pennylane_627_detail(date_min: str, date_max: str) -> dict:
                 lines_627["mollie"].append(info)
             elif "klarna" in label_lower or "klarna" in entry_label_lower:
                 lines_627["klarna"].append(info)
-            elif "cart" in label_lower or "ajustement" in label_lower:
+            elif "écart" in label_lower or "ecart" in label_lower or "ajustement" in label_lower:
                 lines_627["ecart"].append(info)
             else:
                 lines_627["shopify"].append(info)
