@@ -1,17 +1,15 @@
-"""
-Interface graphique Streamlit pour le cadrage frais Shopify Payments.
-Usage: streamlit run cadrage_app.py
-"""
-
 import streamlit as st
 import pandas as pd
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date, timedelta
 from collections import defaultdict
 from cadrage_frais_shopify import get_frais_shopify_fast, get_frais_shopify_detail, get_pennylane_627_detail, STORES
+from ui_common import setup_page
 
-st.set_page_config(page_title="Cadrage Frais Shopify", page_icon="📊", layout="wide")
+setup_page()
 
-st.title("📊 Cadrage Frais Shopify Payments")
+st.title("📊 Cadrage des Frais")
 st.markdown("Comparaison des frais Shopify (API) vs Pennylane (627001 / ENCSP)")
 
 STORE_PREFIXES = {"LFC": ["LFC"], "RED": ["RDC"], "HET": ["HC"], "MTC": ["COCO"],
