@@ -6,6 +6,7 @@ import streamlit as st
 
 def setup_page():
     """Applique le style violet + sidebar navigation sur toutes les pages."""
+    st.set_page_config(layout="wide")
 
     st.markdown("""
     <style>
