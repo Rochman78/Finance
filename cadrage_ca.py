@@ -135,11 +135,11 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
             if not params["since_id"]:
                 break
 
-        # Aggregate by date
+        # Aggregate by date + collect order details
         by_date = {}
         total_ca = 0.0
+        orders_detail = []
         for order in all_orders:
-            # Skip cancelled/voided orders
             if order.get("financial_status") in ("voided",):
                 continue
             price = float(order.get("total_price", 0))
@@ -147,14 +147,26 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
             ca_ht = price - tax
             total_ca += ca_ht
 
-            # Extract date from created_at
             created = order.get("created_at", "")[:10]
             if created not in by_date:
                 by_date[created] = {"ca_ht": 0.0, "nb_orders": 0}
             by_date[created]["ca_ht"] += ca_ht
             by_date[created]["nb_orders"] += 1
 
-        # Round
+            # Clean order name
+            raw_name = order.get("name", "").replace("#", "").replace("-", "")
+            m = re.match(r'([A-Za-z]{0,5}\d+)', raw_name)
+            order_name = m.group(1).upper() if m else raw_name.upper()
+
+            orders_detail.append({
+                "date": created,
+                "order_name": order_name,
+                "ca_ht": round(ca_ht, 2),
+                "tva": round(tax, 2),
+                "ttc": round(price, 2),
+                "store": sname,
+            })
+
         total_ca = round(total_ca, 2)
         for d in by_date:
             by_date[d]["ca_ht"] = round(by_date[d]["ca_ht"], 2)
@@ -162,7 +174,7 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
         if all_orders:
             log.info(f"[{sname}] CA HT Shopify : {total_ca:.2f}€ ({len(all_orders)} commandes)")
 
-        result[sname] = {"ca_ht": total_ca, "nb_orders": len(all_orders), "by_date": by_date}
+        result[sname] = {"ca_ht": total_ca, "nb_orders": len(all_orders), "by_date": by_date, "orders": orders_detail}
 
     return result
 
