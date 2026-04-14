@@ -23,7 +23,7 @@ with col1:
         "Mai 2026", "Juin 2026", "Juillet 2026", "Août 2026",
         "Septembre 2026", "Octobre 2026", "Novembre 2026", "Décembre 2026",
     ]
-    mois_idx = st.selectbox("Mois", range(len(mois_options)), format_func=lambda i: mois_options[i], index=1)
+    mois_idx = st.selectbox("Mois", range(len(mois_options)), format_func=lambda i: mois_options[i], index=2)
     year = 2026
     month = mois_idx + 1
 with col2:

@@ -32,9 +32,9 @@ def ecart_boutique_ok(e):
 # =============================================================
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
-    date_min = st.date_input("Date début", value=date(2026, 3, 1), min_value=date(2026, 3, 1), max_value=date(2026, 3, 15))
+    date_min = st.date_input("Date début", value=date(2026, 3, 1))
 with col2:
-    date_max = st.date_input("Date fin", value=date(2026, 3, 1), min_value=date(2026, 3, 1), max_value=date(2026, 3, 15))
+    date_max = st.date_input("Date fin", value=date(2026, 3, 1))
 with col3:
     st.write("")
     st.write("")
