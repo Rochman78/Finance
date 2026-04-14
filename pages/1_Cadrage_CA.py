@@ -56,7 +56,7 @@ periode_label = f"du {date_min_str} au {date_max_str}" if multi_day else f"du {d
 # =============================================================
 total_sp = round(sum(s["ca_ht"] for s in sp.values() if s["ca_ht"] is not None), 2)
 total_pl = pl["total_ht"]
-ecart_brut = round(total_sp - total_pl, 2)
+ecart_brut_raw = round(total_sp - total_pl, 2)
 
 def ecart_ok(e):
     return abs(e) < SEUIL_ECART
@@ -73,6 +73,8 @@ for sname, sdata in sp.items():
     pl_ca = round(sum(l["ca_ht"] for l in pl["lines"] if l.get("store") == sname), 2)
     if sp_ca > 0 or pl_ca != 0:
         ecart_b = round(sp_ca - pl_ca, 2)
+        if abs(ecart_b) < SEUIL_ECART_BOUTIQUE:
+            ecart_b = 0.0
         is_ok = ecart_boutique_ok(ecart_b)
         cadrage_rows.append({
             "Boutique": sname, "CA HT Shopify": sp_ca, "CA HT Pennylane": pl_ca,
@@ -90,6 +92,9 @@ if unknown_ca:
 
 if "cadrage_boutique_data" not in st.session_state or run:
     st.session_state["cadrage_boutique_data"] = cadrage_rows
+
+# Écart brut = somme des écarts boutiques déjà neutralisés (arrondis éliminés)
+ecart_brut = round(sum(r["Écart"] for r in cadrage_rows), 2)
 
 # Compute écart justifié / résiduel from session state
 current_data = st.session_state.get("cadrage_boutique_data", cadrage_rows)
@@ -293,6 +298,8 @@ if multi_day:
         sp_day = round(daily_sp[day]["ca_ht"], 2)
         pl_day = round(daily_pl.get(day, {}).get("ca_ht", 0), 2)
         ecart_day = round(sp_day - pl_day, 2)
+        if abs(ecart_day) < SEUIL_ECART:
+            ecart_day = 0.0
         daily_rows.append({
             "Date": day, "CA HT Shopify": sp_day, "Commandes": daily_sp[day]["nb_orders"],
             "CA HT Pennylane": pl_day, "Écritures PL": daily_pl.get(day, {}).get("nb_ecritures", 0),
@@ -363,7 +370,8 @@ for order in all_orders_list:
     sp_ht = sp_o["ca_ht"] if sp_o else 0
     pl_ht = round(pl_o["ca_ht"], 2) if pl_o else 0
     ecart_o = round(sp_ht - pl_ht, 2)
-    is_ok = ecart_ok(ecart_o)
+    if abs(ecart_o) < SEUIL_ECART:
+        ecart_o = 0.0
     order_rows.append({
         "Commande": order, "Boutique": (sp_o["store"] if sp_o else pl_o.get("store")) or "?",
         "CA HT Shopify": sp_ht, "CA HT Pennylane": pl_ht, "Écart": ecart_o,

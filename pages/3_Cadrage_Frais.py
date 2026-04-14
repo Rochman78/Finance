@@ -73,7 +73,7 @@ total_pl_klarna   = round(sum(l["net"] for l in lines["klarna"]), 2)
 total_pl_ecart    = round(sum(l["net"] for l in lines["ecart"]), 2)
 total_pl_autre    = round(sum(l["net"] for l in lines["autre"]), 2)
 total_pl_all      = round(total_pl_shopify + total_pl_mollie + total_pl_klarna + total_pl_ecart + total_pl_autre, 2)
-ecart_shopify     = round(total_shopify - total_pl_shopify, 2)
+ecart_shopify_raw = round(total_shopify - total_pl_shopify, 2)
 
 # =============================================================
 # PREPARE CADRAGE BOUTIQUE DATA
@@ -87,6 +87,8 @@ for sname, sdata in shopify_fast.items():
             if any(prefix in (l.get("order_ref", "") or "") for prefix in STORE_PREFIXES.get(sname, []))
         ), 2)
         ecart_b = round(sp_frais - pl_store_frais, 2)
+        if abs(ecart_b) < SEUIL_ECART_BOUTIQUE:
+            ecart_b = 0.0
         is_ok = ecart_boutique_ok(ecart_b)
         nb_txns = sum(d["nb_txns"] for d in sdata.get("by_date", {}).values())
         cadrage_rows.append({
@@ -102,6 +104,9 @@ for sname, sdata in shopify_fast.items():
 
 if "cadrage_frais_boutique_data" not in st.session_state or run:
     st.session_state["cadrage_frais_boutique_data"] = cadrage_rows
+
+# Écart global = somme des écarts boutiques neutralisés
+ecart_shopify = round(sum(r["Écart"] for r in cadrage_rows), 2)
 
 # Compute écart justifié / résiduel from session state
 current_data = st.session_state.get("cadrage_frais_boutique_data", cadrage_rows)
@@ -328,6 +333,8 @@ if multi_day:
         sp_day = round(daily_sp.get(day, 0), 2)
         pl_day = round(daily_pl.get(day, 0), 2)
         ecart_day = round(sp_day - pl_day, 2)
+        if abs(ecart_day) < SEUIL_ECART:
+            ecart_day = 0.0
         daily_rows.append({
             "Date": day,
             "Frais Shopify": sp_day,
@@ -576,6 +583,8 @@ with tab_commande:
             sp_fee = sp_o["fee"] if sp_o else 0
             pl_fee = round(plr["fee"], 2) if plr else 0
             ecart_line = round(sp_fee - pl_fee, 2)
+            if abs(ecart_line) < SEUIL_ECART:
+                ecart_line = 0.0
             store = sp_o["store"] if sp_o else "?"
 
             order_rows.append({
