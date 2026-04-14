@@ -77,8 +77,13 @@ if lines:
     df_display = df[display_cols].copy()
     df_display.columns = ["Date", "Facture", "Client", "N° TVA Intracom", "Montant HT", "Régime"]
 
+    def highlight_avoirs(row):
+        if row["Montant HT"] < 0:
+            return ["background-color: rgba(239, 68, 68, 0.12); color: #991B1B;"] * len(row)
+        return [""] * len(row)
+
     st.dataframe(
-        df_display,
+        df_display.style.apply(highlight_avoirs, axis=1),
         use_container_width=True,
         hide_index=True,
         height=min(600, 35 * (len(df_display) + 1)),

@@ -95,6 +95,75 @@ def pl_get(url: str, params: dict = None) -> dict | None:
 
 
 # =============================================================
+# MAPPING PAYS → COMPTE PRODUIT
+# =============================================================
+EU_COUNTRIES = {"DE", "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "GR", "HU",
+                "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "SE", "ES"}
+
+# Pays UE B2C (OSS) → compte produit
+COUNTRY_TO_ACCOUNT = {
+    "FR": "707",
+    "DE": "7070301",
+    "AT": "7070302",
+    "BE": "7070303",
+    "HR": "7070306",
+    "DK": "7070307",
+    "ES": "7070308",
+    "GR": "7070311",
+    "HU": "7070312",
+    "IE": "7070313",
+    "IT": "7070314",
+    "LU": "7070317",
+    "NL": "7070319",
+    "PT": "7070321",
+    "CZ": "7070322",
+    "RO": "7070323",
+    "SI": "7070325",
+    "SE": "7070326",
+}
+
+ACCOUNT_LABELS = {
+    "707": "Ventes FR",
+    "70702": "Ventes Export hors UE",
+    "707101": "Ventes UE LIC (B2B intracom)",
+    "7070301": "Ventes UE VAD - Allemagne",
+    "7070302": "Ventes UE VAD - Autriche",
+    "7070303": "Ventes UE VAD - Belgique",
+    "7070306": "Ventes UE VAD - Croatie",
+    "7070307": "Ventes UE VAD - Danemark",
+    "7070308": "Ventes UE VAD - Espagne",
+    "7070311": "Ventes UE VAD - Grèce",
+    "7070312": "Ventes UE VAD - Hongrie",
+    "7070313": "Ventes UE VAD - Irlande",
+    "7070314": "Ventes UE VAD - Italie",
+    "7070317": "Ventes UE VAD - Luxembourg",
+    "7070319": "Ventes UE VAD - Pays-Bas",
+    "7070321": "Ventes UE VAD - Portugal",
+    "7070322": "Ventes UE VAD - Rép. Tchèque",
+    "7070323": "Ventes UE VAD - Roumanie",
+    "7070325": "Ventes UE VAD - Slovénie",
+    "7070326": "Ventes UE VAD - Suède",
+}
+
+
+def _country_to_account(country_code: str, total_tax: float) -> str:
+    """Détermine le compte produit en fonction du pays et de la TVA."""
+    if not country_code:
+        return "707"  # Défaut France
+    cc = country_code.upper()
+    if cc == "FR":
+        return "707"
+    if cc in EU_COUNTRIES:
+        # Si TVA = 0 → B2B intracom (LIC)
+        if total_tax == 0:
+            return "707101"
+        # Sinon B2C OSS
+        return COUNTRY_TO_ACCOUNT.get(cc, "70702")
+    # Hors UE → Export
+    return "70702"
+
+
+# =============================================================
 # SHOPIFY — CA HT par boutique et par jour
 # =============================================================
 def get_ca_shopify(date_min: str, date_max: str) -> dict:
@@ -119,7 +188,7 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
             "status": "any",
             "created_at_min": date_min_iso,
             "created_at_max": date_max_iso,
-            "fields": "id,name,total_price,total_tax,created_at,financial_status",
+            "fields": "id,name,total_price,total_tax,created_at,financial_status,shipping_address",
             "limit": 250,
         }
 
@@ -158,6 +227,10 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
             m = re.match(r'([A-Za-z]{0,5}\d+)', raw_name)
             order_name = m.group(1).upper() if m else raw_name.upper()
 
+            shipping = order.get("shipping_address") or {}
+            country_code = shipping.get("country_code", "") or ""
+            compte = _country_to_account(country_code, tax)
+
             orders_detail.append({
                 "date": created,
                 "order_name": order_name,
@@ -165,6 +238,8 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
                 "tva": round(tax, 2),
                 "ttc": round(price, 2),
                 "store": sname,
+                "country_code": country_code,
+                "compte": compte,
             })
 
         total_ca = round(total_ca, 2)

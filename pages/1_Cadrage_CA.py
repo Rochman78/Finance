@@ -156,129 +156,8 @@ else:
     """, unsafe_allow_html=True)
 
 # PDF
-def generate_pdf():
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 12, "AURALIS FINANCES", ln=True, align="C")
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, "Dossier de cadrage du Chiffre d'Affaires", ln=True, align="C")
-    pdf.cell(0, 8, f"Periode : {date_min_str} au {date_max_str}", ln=True, align="C")
-    pdf.cell(0, 8, f"Date d'edition : {TODAY}", ln=True, align="C")
-    pdf.ln(10)
-
-    # Résultat
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Resultat du cadrage", ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, f"CA HT Shopify :    {total_sp:,.2f} EUR", ln=True)
-    pdf.cell(0, 8, f"CA HT Pennylane :  {total_pl:,.2f} EUR", ln=True)
-    pdf.cell(0, 8, f"Ecart brut :       {ecart_brut:,.2f} EUR", ln=True)
-    pdf.cell(0, 8, f"Ecart justifie :   {ecart_justifie:,.2f} EUR", ln=True)
-    pdf.cell(0, 8, f"Ecart residuel :   {ecart_residuel:,.2f} EUR", ln=True)
-    pdf.ln(4)
-
-    if ecart_ok(ecart_brut):
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.set_text_color(6, 95, 70)
-        pdf.cell(0, 10, "CADRAGE OK - Aucun ecart significatif", ln=True)
-    elif all_justified:
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.set_text_color(107, 33, 168)
-        pdf.cell(0, 10, "CADRAGE JUSTIFIE - Tous les ecarts sont justifies", ln=True)
-    else:
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.set_text_color(153, 27, 27)
-        pdf.cell(0, 10, f"ECART RESIDUEL : {ecart_residuel:,.2f} EUR", ln=True)
-
-    pdf.set_text_color(0, 0, 0)
-    pdf.ln(8)
-
-    # Detail par boutique
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Detail par boutique", ln=True)
-
-    pdf.set_font("Helvetica", "B", 9)
-    col_widths = [22, 25, 25, 22, 22, 22, 52]
-    headers = ["Boutique", "CA Shopify", "CA Pennylane", "Ecart", "Justifie", "Restant", "Commentaire"]
-    for i, h in enumerate(headers):
-        pdf.cell(col_widths[i], 7, h, border=1, align="C")
-    pdf.ln()
-
-    pdf.set_font("Helvetica", "", 9)
-    for r in current_data:
-        ecart_b = r["Écart"]
-        mnt_justifie = r.get("Montant écart justifié", 0.0)
-        mnt_restant = round(ecart_b - mnt_justifie, 2) if not ecart_boutique_ok(ecart_b) else 0.0
-        comment = r.get("Commentaire", "")
-
-        pdf.cell(col_widths[0], 6, str(r["Boutique"]), border=1)
-        pdf.cell(col_widths[1], 6, f"{r['CA HT Shopify']:,.2f}", border=1, align="R")
-        pdf.cell(col_widths[2], 6, f"{r['CA HT Pennylane']:,.2f}", border=1, align="R")
-        pdf.cell(col_widths[3], 6, f"{ecart_b:,.2f}", border=1, align="R")
-        pdf.cell(col_widths[4], 6, f"{mnt_justifie:,.2f}", border=1, align="R")
-        pdf.cell(col_widths[5], 6, f"{mnt_restant:,.2f}", border=1, align="R")
-        pdf.cell(col_widths[6], 6, comment[:35], border=1)
-        pdf.ln()
-
-    # Total
-    pdf.set_font("Helvetica", "B", 9)
-    total_sp_b = sum(r["CA HT Shopify"] for r in current_data)
-    total_pl_b = sum(r["CA HT Pennylane"] for r in current_data)
-    total_ec_b = sum(r["Écart"] for r in current_data)
-    total_justifie_b = sum(r.get("Montant écart justifié", 0) for r in current_data if not ecart_boutique_ok(r["Écart"]))
-    total_restant_b = round(total_ec_b - total_justifie_b, 2)
-    pdf.cell(col_widths[0], 7, "TOTAL", border=1)
-    pdf.cell(col_widths[1], 7, f"{total_sp_b:,.2f}", border=1, align="R")
-    pdf.cell(col_widths[2], 7, f"{total_pl_b:,.2f}", border=1, align="R")
-    pdf.cell(col_widths[3], 7, f"{total_ec_b:,.2f}", border=1, align="R")
-    pdf.cell(col_widths[4], 7, f"{total_justifie_b:,.2f}", border=1, align="R")
-    pdf.cell(col_widths[5], 7, f"{total_restant_b:,.2f}", border=1, align="R")
-    pdf.cell(col_widths[6], 7, "", border=1)
-    pdf.ln(10)
-
-    # Synthèse des écarts
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Synthese des ecarts", ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, f"Ecart brut :       {ecart_brut:,.2f} EUR", ln=True)
-    pdf.cell(0, 8, f"Ecart justifie :   {ecart_justifie:,.2f} EUR", ln=True)
-    pdf.cell(0, 8, f"Ecart residuel :   {ecart_residuel:,.2f} EUR", ln=True)
-    pdf.ln(4)
-
-    # Détail justifications
-    justified_rows = [r for r in current_data if r.get("Montant écart justifié", 0) != 0 and not ecart_boutique_ok(r["Écart"])]
-    if justified_rows:
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, "Detail des justifications :", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        for r in justified_rows:
-            mnt_j = r.get("Montant écart justifié", 0)
-            mnt_r = round(r["Écart"] - mnt_j, 2)
-            pdf.cell(0, 7, f"  {r['Boutique']} : ecart {r['Écart']:,.2f} EUR, justifie {mnt_j:,.2f} EUR, restant {mnt_r:,.2f} EUR - {r.get('Commentaire', '')}", ln=True)
-
-    non_justified = [r for r in current_data if r.get("Montant écart justifié", 0) == 0 and not ecart_boutique_ok(r["Écart"])]
-    if non_justified:
-        pdf.ln(4)
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(153, 27, 27)
-        pdf.cell(0, 8, "Ecarts non justifies :", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        for r in non_justified:
-            pdf.cell(0, 7, f"  {r['Boutique']} : ecart {r['Écart']:,.2f} EUR", ln=True)
-        pdf.set_text_color(0, 0, 0)
-
-    return bytes(pdf.output())
-
-pdf_bytes = generate_pdf()
-st.download_button(
-    "📄 Exporter le dossier de cadrage (PDF)",
-    pdf_bytes,
-    f"{TODAY} Dossier Cadrage CA {periode_label}.pdf",
-    "application/pdf",
-)
+# PDF placeholder — generated after tabs
+pdf_placeholder = st.empty()
 
 # Résultat jour par jour (si multi-jours)
 if multi_day:
@@ -396,95 +275,40 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-tab_boutique, tab_commande = st.tabs(["📊 Par boutique", "📋 Par commande"])
+from cadrage_ca import ACCOUNT_LABELS, COUNTRY_TO_ACCOUNT
 
-# ─── TAB 1 : PAR BOUTIQUE ───
-with tab_boutique:
-    df_cadrage = pd.DataFrame(st.session_state["cadrage_boutique_data"])
+# Prepare account data for tab 3
+sp_account_data = defaultdict(lambda: {"ca_ht": 0.0, "count": 0})
+sp_country_data = defaultdict(lambda: {"ca_ht": 0.0, "count": 0, "compte": ""})
+all_sp_orders = []
+for sdata in sp.values():
+    for o in sdata.get("orders", []):
+        all_sp_orders.append(o)
+        compte = o.get("compte", "707")
+        sp_account_data[compte]["ca_ht"] += o["ca_ht"]
+        sp_account_data[compte]["count"] += 1
+        cc = o.get("country_code", "FR") or "FR"
+        sp_country_data[cc]["ca_ht"] += o["ca_ht"]
+        sp_country_data[cc]["count"] += 1
+        sp_country_data[cc]["compte"] = compte
 
-    def get_statut_boutique(row):
-        if ecart_boutique_ok(row["Écart"]):
-            return "✅"
-        elif row.get("Montant écart justifié", 0) == row["Écart"]:
-            return "🟣"
-        elif row.get("Montant écart justifié", 0) != 0:
-            return "🟡"
-        else:
-            return "❌"
+pl_account_data = defaultdict(lambda: {"ca_ht": 0.0, "count": 0, "name": ""})
+for l in pl["lines"]:
+    key = l["account"]
+    pl_account_data[key]["ca_ht"] += l["ca_ht"]
+    pl_account_data[key]["count"] += 1
+    if l.get("account_name") and not pl_account_data[key]["name"]:
+        pl_account_data[key]["name"] = l["account_name"]
 
-    df_cadrage["Statut"] = df_cadrage.apply(get_statut_boutique, axis=1)
+# Country code to label
+COUNTRY_NAMES = {"FR": "France", "DE": "Allemagne", "AT": "Autriche", "BE": "Belgique", "HR": "Croatie",
+    "DK": "Danemark", "ES": "Espagne", "GR": "Grèce", "HU": "Hongrie", "IE": "Irlande", "IT": "Italie",
+    "LU": "Luxembourg", "NL": "Pays-Bas", "PT": "Portugal", "CZ": "Rép. Tchèque", "RO": "Roumanie",
+    "SI": "Slovénie", "SE": "Suède", "GB": "Royaume-Uni", "CH": "Suisse", "US": "États-Unis"}
 
-    df_cadrage["Montant écart justifié"] = df_cadrage.apply(
-        lambda r: round(r.get("Montant écart justifié", 0.0), 2) if not ecart_boutique_ok(r["Écart"]) else 0.0, axis=1)
-    df_cadrage["Montant écart restant"] = df_cadrage.apply(
-        lambda r: round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2) if not ecart_boutique_ok(r["Écart"]) else 0.0, axis=1)
+tab_boutique, tab_compte, tab_commande = st.tabs(["📊 Par boutique", "🌍 Par pays de livraison (compte comptable)", "📋 Par commande"])
 
-    filter_boutique = st.radio("Filtrer", ["Toutes", "Écarts seulement"], horizontal=True, key="cadrage_bout_filter")
-    df_cadrage_display = df_cadrage.copy()
-    if filter_boutique == "Écarts seulement":
-        df_cadrage_display = df_cadrage_display[~df_cadrage_display["Écart"].apply(ecart_boutique_ok)]
-
-    display_cols = ["Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart justifié", "Montant écart restant", "Statut", "Commentaire"]
-
-    edited_cadrage = st.data_editor(
-        df_cadrage_display[display_cols],
-        use_container_width=True, hide_index=True,
-        disabled=["Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart restant", "Statut"],
-        column_config={
-            "Commentaire": st.column_config.TextColumn("✏️ Commentaire", width="large"),
-            "CA HT Shopify": st.column_config.NumberColumn(format="%.2f"),
-            "CA HT Pennylane": st.column_config.NumberColumn(format="%.2f"),
-            "Écart": st.column_config.NumberColumn(format="%.2f"),
-            "Montant écart justifié": st.column_config.NumberColumn("✏️ Montant écart justifié", format="%.2f"),
-            "Montant écart restant": st.column_config.NumberColumn(format="%.2f"),
-        },
-    )
-
-    if edited_cadrage is not None:
-        _changed = False
-        for idx, row in edited_cadrage.iterrows():
-            for r in st.session_state["cadrage_boutique_data"]:
-                if r["Boutique"] == row["Boutique"]:
-                    if not ecart_boutique_ok(r["Écart"]):
-                        new_mnt = row.get("Montant écart justifié", 0.0)
-                        if r.get("Montant écart justifié", 0.0) != new_mnt:
-                            r["Montant écart justifié"] = new_mnt
-                            _changed = True
-                    new_comment = row.get("Commentaire", "")
-                    if r.get("Commentaire", "") != new_comment:
-                        r["Commentaire"] = new_comment
-                        _changed = True
-        if _changed:
-            st.rerun()
-
-    # Synthèse écarts boutique (from session state for up-to-date values)
-    current_bout = st.session_state.get("cadrage_boutique_data", cadrage_rows)
-    ecart_brut_b = round(sum(r["Écart"] for r in current_bout), 2)
-    ecart_justifie_b = round(
-        sum(r.get("Montant écart justifié", 0) for r in current_bout if not ecart_boutique_ok(r["Écart"]))
-        + sum(r["Écart"] for r in current_bout if ecart_boutique_ok(r["Écart"])),
-        2
-    )
-    ecart_residuel_b = round(ecart_brut_b - ecart_justifie_b, 2)
-
-    col_t1, col_t2, col_t3, col_t4, col_t5 = st.columns(5)
-    col_t1.metric("Total Shopify", f"{df_cadrage['CA HT Shopify'].sum():,.2f} €")
-    col_t2.metric("Total Pennylane", f"{df_cadrage['CA HT Pennylane'].sum():,.2f} €")
-    col_t3.metric("Écart brut", f"{ecart_brut_b:,.2f} €")
-    col_t4.metric("Justifié", f"{ecart_justifie_b:,.2f} €")
-    col_t5.metric("Résiduel", f"{ecart_residuel_b:,.2f} €")
-
-    # Rebuild df from session state for up-to-date export
-    df_cadrage_export = pd.DataFrame(st.session_state.get("cadrage_boutique_data", cadrage_rows))
-    df_cadrage_export["Montant écart restant"] = df_cadrage_export.apply(
-        lambda r: round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2) if not ecart_boutique_ok(r["Écart"]) else 0.0, axis=1)
-    df_cadrage_export["Statut"] = df_cadrage_export.apply(get_statut_boutique, axis=1)
-    export_cols_bout = [c for c in display_cols if c in df_cadrage_export.columns]
-    csv_cadrage_bout = df_cadrage_export[export_cols_bout].to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Export cadrage par boutique (CSV)", csv_cadrage_bout, f"{TODAY} Cadrage CA Boutiques {periode_label}.csv", "text/csv")
-
-# ─── TAB 2 : PAR COMMANDE ───
-# Initialize order data in session state
+# ─── TAB 1 : PAR COMMANDE ───
 if "cadrage_commande_data" not in st.session_state or run:
     st.session_state["cadrage_commande_data"] = order_rows
 
@@ -504,7 +328,6 @@ with tab_commande:
                 return "❌"
 
         df_orders["Statut"] = df_orders.apply(get_statut_commande, axis=1)
-
         if "Montant écart justifié" not in df_orders.columns:
             df_orders["Montant écart justifié"] = 0.0
         df_orders["Montant écart restant"] = df_orders.apply(
@@ -564,7 +387,6 @@ with tab_commande:
         col_s2.metric("OK", f"{nb_ok}")
         col_s3.metric("En écart", f"{nb_ecart_o}", delta=f"{nb_ecart_o}" if nb_ecart_o > 0 else None, delta_color="inverse")
 
-        # Export from session state for up-to-date values
         df_orders_exp = pd.DataFrame(st.session_state.get("cadrage_commande_data", order_rows))
         if "Montant écart justifié" not in df_orders_exp.columns:
             df_orders_exp["Montant écart justifié"] = 0.0
@@ -575,70 +397,418 @@ with tab_commande:
         csv_orders = df_orders_exp[exp_cols_cmd].to_csv(index=False).encode("utf-8")
         st.download_button("📥 Export cadrage par commande (CSV)", csv_orders, f"{TODAY} Cadrage CA Commandes {periode_label}.csv", "text/csv")
 
+# ─── TAB 2 : PAR BOUTIQUE ───
+with tab_boutique:
+    df_cadrage = pd.DataFrame(st.session_state["cadrage_boutique_data"])
+
+    def get_statut_boutique(row):
+        if ecart_boutique_ok(row["Écart"]):
+            return "✅"
+        elif row.get("Montant écart justifié", 0) == row["Écart"]:
+            return "🟣"
+        elif row.get("Montant écart justifié", 0) != 0:
+            return "🟡"
+        else:
+            return "❌"
+
+    df_cadrage["Statut"] = df_cadrage.apply(get_statut_boutique, axis=1)
+    df_cadrage["Montant écart justifié"] = df_cadrage.apply(
+        lambda r: round(r.get("Montant écart justifié", 0.0), 2) if not ecart_boutique_ok(r["Écart"]) else 0.0, axis=1)
+    df_cadrage["Montant écart restant"] = df_cadrage.apply(
+        lambda r: round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2) if not ecart_boutique_ok(r["Écart"]) else 0.0, axis=1)
+
+    filter_boutique = st.radio("Filtrer", ["Toutes", "Écarts seulement"], horizontal=True, key="cadrage_bout_filter")
+    df_cadrage_display = df_cadrage.copy()
+    if filter_boutique == "Écarts seulement":
+        df_cadrage_display = df_cadrage_display[~df_cadrage_display["Écart"].apply(ecart_boutique_ok)]
+
+    display_cols = ["Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart justifié", "Montant écart restant", "Statut", "Commentaire"]
+
+    edited_cadrage = st.data_editor(
+        df_cadrage_display[display_cols],
+        use_container_width=True, hide_index=True,
+        disabled=["Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart restant", "Statut"],
+        column_config={
+            "Commentaire": st.column_config.TextColumn("✏️ Commentaire", width="large"),
+            "CA HT Shopify": st.column_config.NumberColumn(format="%.2f"),
+            "CA HT Pennylane": st.column_config.NumberColumn(format="%.2f"),
+            "Écart": st.column_config.NumberColumn(format="%.2f"),
+            "Montant écart justifié": st.column_config.NumberColumn("✏️ Montant écart justifié", format="%.2f"),
+            "Montant écart restant": st.column_config.NumberColumn(format="%.2f"),
+        },
+    )
+
+    if edited_cadrage is not None:
+        _changed = False
+        for idx, row in edited_cadrage.iterrows():
+            for r in st.session_state["cadrage_boutique_data"]:
+                if r["Boutique"] == row["Boutique"]:
+                    if not ecart_boutique_ok(r["Écart"]):
+                        new_mnt = row.get("Montant écart justifié", 0.0)
+                        if r.get("Montant écart justifié", 0.0) != new_mnt:
+                            r["Montant écart justifié"] = new_mnt
+                            _changed = True
+                    new_comment = row.get("Commentaire", "")
+                    if r.get("Commentaire", "") != new_comment:
+                        r["Commentaire"] = new_comment
+                        _changed = True
+        if _changed:
+            st.rerun()
+
+    current_bout = st.session_state.get("cadrage_boutique_data", cadrage_rows)
+    ecart_brut_b = round(sum(r["Écart"] for r in current_bout), 2)
+    ecart_justifie_b = round(
+        sum(r.get("Montant écart justifié", 0) for r in current_bout if not ecart_boutique_ok(r["Écart"]))
+        + sum(r["Écart"] for r in current_bout if ecart_boutique_ok(r["Écart"])), 2)
+    ecart_residuel_b = round(ecart_brut_b - ecart_justifie_b, 2)
+
+    col_t1, col_t2, col_t3, col_t4, col_t5 = st.columns(5)
+    col_t1.metric("Total Shopify", f"{df_cadrage['CA HT Shopify'].sum():,.2f} €")
+    col_t2.metric("Total Pennylane", f"{df_cadrage['CA HT Pennylane'].sum():,.2f} €")
+    col_t3.metric("Écart brut", f"{ecart_brut_b:,.2f} €")
+    col_t4.metric("Justifié", f"{ecart_justifie_b:,.2f} €")
+    col_t5.metric("Résiduel", f"{ecart_residuel_b:,.2f} €")
+
+    df_cadrage_export = pd.DataFrame(st.session_state.get("cadrage_boutique_data", cadrage_rows))
+    df_cadrage_export["Montant écart restant"] = df_cadrage_export.apply(
+        lambda r: round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2) if not ecart_boutique_ok(r["Écart"]) else 0.0, axis=1)
+    df_cadrage_export["Statut"] = df_cadrage_export.apply(get_statut_boutique, axis=1)
+    export_cols_bout = [c for c in display_cols if c in df_cadrage_export.columns]
+    csv_cadrage_bout = df_cadrage_export[export_cols_bout].to_csv(index=False).encode("utf-8")
+    st.download_button("📥 Export cadrage par boutique (CSV)", csv_cadrage_bout, f"{TODAY} Cadrage CA Boutiques {periode_label}.csv", "text/csv")
+
+# ─── TAB 3 : PAR PAYS DE LIVRAISON (COMPTE COMPTABLE) ───
+# Build rows
+all_comptes = sorted(set(list(sp_account_data.keys()) + list(pl_account_data.keys())))
+cadrage_compte_rows = []
+for compte in all_comptes:
+    sp_ca = round(sp_account_data[compte]["ca_ht"], 2)
+    pl_ca = round(pl_account_data[compte]["ca_ht"], 2)
+    ecart_c = round(sp_ca - pl_ca, 2)
+    label = pl_account_data[compte]["name"] or ACCOUNT_LABELS.get(compte, "")
+    pays = ""
+    for cc, acc in COUNTRY_TO_ACCOUNT.items():
+        if acc == compte:
+            pays = f"{COUNTRY_NAMES.get(cc, cc)} ({cc})"
+            break
+    if compte == "707":
+        pays = "France (FR)"
+    elif compte in ("70702", "707020"):
+        pays = "Hors UE (Export)"
+    elif compte == "707101":
+        pays = "UE B2B (Intracom)"
+    if abs(ecart_c) < 1.0:
+        ecart_c = 0.0
+    is_ok = abs(ecart_c) < SEUIL_ECART_BOUTIQUE
+    cadrage_compte_rows.append({
+        "Pays": pays, "Compte": compte, "Libellé": label,
+        "CA HT Shopify": sp_ca, "CA HT Pennylane": pl_ca, "Écart": ecart_c,
+        "Montant écart justifié": ecart_c if is_ok else 0.0, "Commentaire": "",
+    })
+
+if "cadrage_compte_data" not in st.session_state or run:
+    st.session_state["cadrage_compte_data"] = cadrage_compte_rows
+
+with tab_compte:
+    current_comptes = st.session_state.get("cadrage_compte_data", cadrage_compte_rows)
+    if current_comptes:
+        df_comptes = pd.DataFrame(current_comptes)
+
+        def get_statut_compte(row):
+            if abs(row["Écart"]) < SEUIL_ECART:
+                return "✅"
+            elif row.get("Montant écart justifié", 0) == row["Écart"]:
+                return "🟣"
+            elif row.get("Montant écart justifié", 0) != 0:
+                return "🟡"
+            else:
+                return "❌"
+
+        df_comptes["Statut"] = df_comptes.apply(get_statut_compte, axis=1)
+        df_comptes["Montant écart justifié"] = df_comptes.apply(
+            lambda r: round(r.get("Montant écart justifié", 0.0), 2) if abs(r["Écart"]) >= SEUIL_ECART else 0.0, axis=1)
+        df_comptes["Montant écart restant"] = df_comptes.apply(
+            lambda r: round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2) if abs(r["Écart"]) >= SEUIL_ECART else 0.0, axis=1)
+
+        filter_compte = st.radio("Filtrer", ["Tous", "Écarts seulement"], horizontal=True, key="cadrage_cpt_filter")
+        df_comptes_display = df_comptes.copy()
+        if filter_compte == "Écarts seulement":
+            df_comptes_display = df_comptes_display[df_comptes_display["Écart"].apply(lambda e: abs(e) >= SEUIL_ECART)]
+
+        display_cols_cpt = ["Pays", "Compte", "Libellé", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart justifié", "Montant écart restant", "Statut", "Commentaire"]
+
+        edited_comptes = st.data_editor(
+            df_comptes_display[display_cols_cpt],
+            use_container_width=True, hide_index=True,
+            disabled=["Pays", "Compte", "Libellé", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart restant", "Statut"],
+            column_config={
+                "Commentaire": st.column_config.TextColumn("✏️ Commentaire", width="large"),
+                "CA HT Shopify": st.column_config.NumberColumn(format="%.2f"),
+                "CA HT Pennylane": st.column_config.NumberColumn(format="%.2f"),
+                "Écart": st.column_config.NumberColumn(format="%.2f"),
+                "Montant écart justifié": st.column_config.NumberColumn("✏️ Montant écart justifié", format="%.2f"),
+                "Montant écart restant": st.column_config.NumberColumn(format="%.2f"),
+            },
+        )
+
+        if edited_comptes is not None:
+            _cpt_changed = False
+            for idx, row in edited_comptes.iterrows():
+                for r in st.session_state["cadrage_compte_data"]:
+                    if r["Compte"] == row["Compte"]:
+                        if abs(r["Écart"]) >= SEUIL_ECART:
+                            new_mnt = row.get("Montant écart justifié", 0.0)
+                            if r.get("Montant écart justifié", 0.0) != new_mnt:
+                                r["Montant écart justifié"] = new_mnt
+                                _cpt_changed = True
+                        new_comment = row.get("Commentaire", "")
+                        if r.get("Commentaire", "") != new_comment:
+                            r["Commentaire"] = new_comment
+                            _cpt_changed = True
+            if _cpt_changed:
+                st.rerun()
+
+        # Totaux
+        col_c1, col_c2, col_c3 = st.columns(3)
+        col_c1.metric("Total Shopify", f"{df_comptes['CA HT Shopify'].sum():,.2f} €")
+        col_c2.metric("Total Pennylane", f"{df_comptes['CA HT Pennylane'].sum():,.2f} €")
+        col_c3.metric("Écart", f"{df_comptes['Écart'].sum():,.2f} €")
+
+        df_comptes_exp = pd.DataFrame(st.session_state.get("cadrage_compte_data", cadrage_compte_rows))
+        df_comptes_exp["Montant écart restant"] = df_comptes_exp.apply(
+            lambda r: round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2) if abs(r["Écart"]) >= SEUIL_ECART else 0.0, axis=1)
+        df_comptes_exp["Statut"] = df_comptes_exp.apply(get_statut_compte, axis=1)
+        exp_cols_cpt = [c for c in display_cols_cpt if c in df_comptes_exp.columns]
+        csv_comptes = df_comptes_exp[exp_cols_cpt].to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Export cadrage par pays (CSV)", csv_comptes, f"{TODAY} Cadrage CA Pays {periode_label}.csv", "text/csv")
+
+# ─── PDF GENERATION (after tabs so all data is available) ───
+def generate_pdf():
+    W = 277  # Largeur utile A4 paysage (297 - 2*10 marges)
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # ─── PAGE 1 : Résultat du cadrage ───
+    pdf.add_page("L")
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.cell(0, 14, "AURALIS FINANCES", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 8, "Rapport de cadrage du Chiffre d'Affaires", ln=True, align="C")
+    pdf.cell(0, 8, f"Periode : {date_min_str} au {date_max_str}", ln=True, align="C")
+    pdf.cell(0, 8, f"Date d'edition : {TODAY}", ln=True, align="C")
+    pdf.ln(15)
+
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 12, "Resultat du cadrage", ln=True)
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "", 13)
+    pdf.cell(0, 9, f"CA HT Shopify :       {total_sp:,.2f} EUR", ln=True)
+    pdf.cell(0, 9, f"CA HT Pennylane :     {total_pl:,.2f} EUR", ln=True)
+    pdf.cell(0, 9, f"Ecart brut :          {ecart_brut:,.2f} EUR", ln=True)
+    pdf.cell(0, 9, f"Ecart justifie :      {ecart_justifie:,.2f} EUR", ln=True)
+    pdf.cell(0, 9, f"Ecart residuel :      {ecart_residuel:,.2f} EUR", ln=True)
+    pdf.ln(8)
+
+    if ecart_ok(ecart_brut):
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(6, 95, 70)
+        pdf.cell(0, 12, "CADRAGE OK - Aucun ecart significatif", ln=True)
+    elif all_justified:
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(107, 33, 168)
+        pdf.cell(0, 12, "CADRAGE JUSTIFIE - Tous les ecarts sont justifies", ln=True)
+    else:
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(153, 27, 27)
+        pdf.cell(0, 12, f"ECART RESIDUEL : {ecart_residuel:,.2f} EUR", ln=True)
+    pdf.set_text_color(0, 0, 0)
+
+    # ─── PAGE 2 : Par boutique ───
+    pdf.add_page("L")
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 12, "Detail du cadrage - Par boutique", ln=True)
+    pdf.ln(4)
+
+    _bout_data = st.session_state.get("cadrage_boutique_data", cadrage_rows)
+    cw_bout = [int(W*0.12), int(W*0.14), int(W*0.14), int(W*0.10), int(W*0.10), int(W*0.10), int(W*0.30)]
+    pdf.set_font("Helvetica", "B", 10)
+    for i, h in enumerate(["Boutique", "CA Shopify", "CA Pennylane", "Ecart", "Justifie", "Restant", "Commentaire"]):
+        pdf.cell(cw_bout[i], 8, h, border=1, align="C")
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 10)
+    for r in _bout_data:
+        eb = r["Écart"]
+        mj = r.get("Montant écart justifié", 0.0)
+        mr = round(eb - mj, 2) if not ecart_boutique_ok(eb) else 0.0
+        pdf.cell(cw_bout[0], 7, str(r["Boutique"]), border=1)
+        pdf.cell(cw_bout[1], 7, f"{r['CA HT Shopify']:,.2f}", border=1, align="R")
+        pdf.cell(cw_bout[2], 7, f"{r['CA HT Pennylane']:,.2f}", border=1, align="R")
+        pdf.cell(cw_bout[3], 7, f"{eb:,.2f}", border=1, align="R")
+        pdf.cell(cw_bout[4], 7, f"{mj:,.2f}", border=1, align="R")
+        pdf.cell(cw_bout[5], 7, f"{mr:,.2f}", border=1, align="R")
+        pdf.cell(cw_bout[6], 7, str(r.get("Commentaire", ""))[:50], border=1)
+        pdf.ln()
+    pdf.set_font("Helvetica", "B", 10)
+    t_sp = sum(r["CA HT Shopify"] for r in _bout_data)
+    t_pl = sum(r["CA HT Pennylane"] for r in _bout_data)
+    t_ec = sum(r["Écart"] for r in _bout_data)
+    pdf.cell(cw_bout[0], 8, "TOTAL", border=1)
+    pdf.cell(cw_bout[1], 8, f"{t_sp:,.2f}", border=1, align="R")
+    pdf.cell(cw_bout[2], 8, f"{t_pl:,.2f}", border=1, align="R")
+    pdf.cell(cw_bout[3], 8, f"{t_ec:,.2f}", border=1, align="R")
+    pdf.cell(cw_bout[4], 8, "", border=1)
+    pdf.cell(cw_bout[5], 8, "", border=1)
+    pdf.cell(cw_bout[6], 8, "", border=1)
+    pdf.ln()
+
+    # ─── PAGE 3 : Par pays de livraison ───
+    pdf.add_page("L")
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 12, "Detail du cadrage - Par pays de livraison (compte comptable)", ln=True)
+    pdf.ln(4)
+
+    _cpt_data = st.session_state.get("cadrage_compte_data", cadrage_compte_rows)
+    cw_cpt = [int(W*0.12), int(W*0.07), int(W*0.18), int(W*0.11), int(W*0.11), int(W*0.09), int(W*0.09), int(W*0.09), int(W*0.14)]
+    pdf.set_font("Helvetica", "B", 9)
+    for i, h in enumerate(["Pays", "Compte", "Libelle", "CA Shopify", "CA PL", "Ecart", "Justifie", "Restant", "Commentaire"]):
+        pdf.cell(cw_cpt[i], 8, h, border=1, align="C")
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 9)
+    for r in _cpt_data:
+        ec = r["Écart"]
+        mj = r.get("Montant écart justifié", 0.0)
+        mr = round(ec - mj, 2) if abs(ec) >= SEUIL_ECART else 0.0
+        pdf.cell(cw_cpt[0], 7, str(r.get("Pays", ""))[:18], border=1)
+        pdf.cell(cw_cpt[1], 7, str(r.get("Compte", "")), border=1)
+        pdf.cell(cw_cpt[2], 7, str(r.get("Libellé", ""))[:30], border=1)
+        pdf.cell(cw_cpt[3], 7, f"{r['CA HT Shopify']:,.2f}", border=1, align="R")
+        pdf.cell(cw_cpt[4], 7, f"{r['CA HT Pennylane']:,.2f}", border=1, align="R")
+        pdf.cell(cw_cpt[5], 7, f"{ec:,.2f}", border=1, align="R")
+        pdf.cell(cw_cpt[6], 7, f"{mj:,.2f}", border=1, align="R")
+        pdf.cell(cw_cpt[7], 7, f"{mr:,.2f}", border=1, align="R")
+        pdf.cell(cw_cpt[8], 7, str(r.get("Commentaire", ""))[:22], border=1)
+        pdf.ln()
+    pdf.set_font("Helvetica", "B", 9)
+    t_sp_c = sum(r["CA HT Shopify"] for r in _cpt_data)
+    t_pl_c = sum(r["CA HT Pennylane"] for r in _cpt_data)
+    t_ec_c = sum(r["Écart"] for r in _cpt_data)
+    pdf.cell(cw_cpt[0], 8, "", border=1)
+    pdf.cell(cw_cpt[1], 8, "TOTAL", border=1)
+    pdf.cell(cw_cpt[2], 8, "", border=1)
+    pdf.cell(cw_cpt[3], 8, f"{t_sp_c:,.2f}", border=1, align="R")
+    pdf.cell(cw_cpt[4], 8, f"{t_pl_c:,.2f}", border=1, align="R")
+    pdf.cell(cw_cpt[5], 8, f"{t_ec_c:,.2f}", border=1, align="R")
+    pdf.cell(cw_cpt[6], 8, "", border=1)
+    pdf.cell(cw_cpt[7], 8, "", border=1)
+    pdf.cell(cw_cpt[8], 8, "", border=1)
+    pdf.ln()
+
+    # ─── PAGE 4 : Par commande (écarts uniquement) ───
+    pdf.add_page("L")
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 12, "Detail du cadrage - Par commande (ecarts uniquement)", ln=True)
+    pdf.ln(4)
+
+    _cmd_data = st.session_state.get("cadrage_commande_data", order_rows)
+    _cmd_ecarts = [r for r in _cmd_data if abs(r.get("Écart", 0)) >= SEUIL_ECART]
+    if _cmd_ecarts:
+        cw_cmd = [int(W*0.08), int(W*0.12), int(W*0.14), int(W*0.12), int(W*0.12), int(W*0.10), int(W*0.10), int(W*0.22)]
+        pdf.set_font("Helvetica", "B", 10)
+        for i, h in enumerate(["Boutique", "Commande", "Facture", "CA Shopify", "CA PL", "Ecart", "Justifie", "Commentaire"]):
+            pdf.cell(cw_cmd[i], 8, h, border=1, align="C")
+        pdf.ln()
+        pdf.set_font("Helvetica", "", 9)
+        for r in _cmd_ecarts:
+            mj = r.get("Montant écart justifié", 0)
+            pdf.cell(cw_cmd[0], 7, str(r.get("Boutique", "")), border=1)
+            pdf.cell(cw_cmd[1], 7, str(r.get("Commande", "")), border=1)
+            pdf.cell(cw_cmd[2], 7, str(r.get("Facture", ""))[:20], border=1)
+            pdf.cell(cw_cmd[3], 7, f"{r.get('CA HT Shopify', 0):,.2f}", border=1, align="R")
+            pdf.cell(cw_cmd[4], 7, f"{r.get('CA HT Pennylane', 0):,.2f}", border=1, align="R")
+            pdf.cell(cw_cmd[5], 7, f"{r.get('Écart', 0):,.2f}", border=1, align="R")
+            pdf.cell(cw_cmd[6], 7, f"{mj:,.2f}", border=1, align="R")
+            pdf.cell(cw_cmd[7], 7, str(r.get("Commentaire", ""))[:35], border=1)
+            pdf.ln()
+    else:
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 10, "Aucun ecart significatif par commande", ln=True)
+
+    return bytes(pdf.output())
+
+pdf_bytes = generate_pdf()
+pdf_placeholder.download_button(
+    "📄 Rapport de cadrage CA (PDF)",
+    pdf_bytes,
+    f"{TODAY} Rapport Cadrage CA {periode_label}.pdf",
+    "application/pdf",
+)
+
 # ╔═══════════════════════════════════════════════════════════════╗
 # ║  3. ÉLÉMENTS DE JUSTIFICATION                                 ║
 # ╚═══════════════════════════════════════════════════════════════╝
 st.markdown("---")
 st.subheader("Éléments de justification")
 
-# ─── CA HT Pennylane ───
-st.markdown("### CA HT Pennylane")
-
-st.markdown("**Par compte comptable**")
-account_data = defaultdict(lambda: {"ca_ht": 0.0, "count": 0, "name": ""})
-for l in pl["lines"]:
-    key = l["account"]
-    account_data[key]["ca_ht"] += l["ca_ht"]
-    account_data[key]["count"] += 1
-    if l.get("account_name") and not account_data[key]["name"]:
-        account_data[key]["name"] = l["account_name"]
-
-account_rows = [{"Compte": acc, "Libellé": d["name"], "CA HT": round(d["ca_ht"], 2), "Écritures": d["count"]} for acc, d in sorted(account_data.items())]
-if account_rows:
-    df_accounts = pd.DataFrame(account_rows)
-    df_accounts = pd.concat([df_accounts, pd.DataFrame([{"Compte": "TOTAL", "Libellé": "", "CA HT": round(df_accounts["CA HT"].sum(), 2), "Écritures": df_accounts["Écritures"].sum()}])], ignore_index=True)
-    st.dataframe(df_accounts, use_container_width=True, hide_index=True)
-
-st.markdown("**Par boutique Shopify**")
-pl_store_rows = []
-for sname in sorted(STORE_PREFIXES.keys()):
-    pl_store_ca = round(sum(l["ca_ht"] for l in pl["lines"] if l.get("store") == sname), 2)
-    pl_store_count = sum(1 for l in pl["lines"] if l.get("store") == sname)
-    if pl_store_ca != 0 or pl_store_count > 0:
-        pl_store_rows.append({"Boutique": sname, "CA HT Pennylane": pl_store_ca, "Écritures": pl_store_count})
-
-unknown_pl = round(sum(l["ca_ht"] for l in pl["lines"] if l.get("store") is None), 2)
-unknown_count = sum(1 for l in pl["lines"] if l.get("store") is None)
-if unknown_pl or unknown_count:
-    pl_store_rows.append({"Boutique": "(INCONNU)", "CA HT Pennylane": unknown_pl, "Écritures": unknown_count})
-
-if pl_store_rows:
-    df_pl_stores = pd.DataFrame(pl_store_rows)
-    df_pl_stores = pd.concat([df_pl_stores, pd.DataFrame([{"Boutique": "TOTAL", "CA HT Pennylane": round(df_pl_stores["CA HT Pennylane"].sum(), 2), "Écritures": df_pl_stores["Écritures"].sum()}])], ignore_index=True)
-    st.dataframe(df_pl_stores, use_container_width=True, hide_index=True)
-
-if pl["lines"]:
-    df_pl_export = pd.DataFrame(pl["lines"]).rename(columns={"date": "Date", "entry_label": "Écriture", "invoice_number": "Facture", "order_ref": "Commande", "store": "Boutique", "account": "Compte", "account_name": "Libellé compte", "ca_ht": "Montant HT"})
-    df_pl_export = df_pl_export[["Date", "Boutique", "Compte", "Libellé compte", "Écriture", "Facture", "Commande", "Montant HT"]].sort_values(["Date", "Boutique", "Commande"])
-    st.download_button("📥 Export CA Pennylane détaillé (CSV)", df_pl_export.to_csv(index=False).encode("utf-8"), f"{TODAY} CA Pennylane Detail {periode_label}.csv", "text/csv")
-
-# ─── CA HT Shopify ───
+# ─── Shopify ───
 st.markdown("### CA HT Shopify")
-st.markdown("**Par boutique**")
 
+st.markdown("**Par boutique**")
 sp_store_rows = [{"Boutique": sname, "CA HT Shopify": sdata["ca_ht"], "Commandes": sdata["nb_orders"]} for sname, sdata in sp.items() if sdata["ca_ht"] is not None and sdata["ca_ht"] > 0]
 if sp_store_rows:
     df_sp_stores = pd.DataFrame(sp_store_rows)
     df_sp_stores = pd.concat([df_sp_stores, pd.DataFrame([{"Boutique": "TOTAL", "CA HT Shopify": round(df_sp_stores["CA HT Shopify"].sum(), 2), "Commandes": df_sp_stores["Commandes"].sum()}])], ignore_index=True)
     st.dataframe(df_sp_stores, use_container_width=True, hide_index=True)
 
-all_sp_orders = []
-for sdata in sp.values():
-    all_sp_orders.extend(sdata.get("orders", []))
+st.markdown("**Par pays de livraison (compte comptable)**")
+sp_country_rows = []
+for cc in sorted(sp_country_data.keys()):
+    d = sp_country_data[cc]
+    sp_country_rows.append({"Pays": COUNTRY_NAMES.get(cc, cc), "Code": cc, "CA HT Shopify": round(d["ca_ht"], 2), "Commandes": d["count"]})
+if sp_country_rows:
+    df_sp_country = pd.DataFrame(sp_country_rows)
+    df_sp_country = pd.concat([df_sp_country, pd.DataFrame([{"Pays": "TOTAL", "Code": "", "CA HT Shopify": round(df_sp_country["CA HT Shopify"].sum(), 2), "Commandes": df_sp_country["Commandes"].sum()}])], ignore_index=True)
+    st.dataframe(df_sp_country, use_container_width=True, hide_index=True)
+
 if all_sp_orders:
-    df_sp_export = pd.DataFrame(all_sp_orders).rename(columns={"date": "Date", "order_name": "Commande", "store": "Boutique", "ca_ht": "Montant HT"})
-    df_sp_export = df_sp_export[["Date", "Boutique", "Commande", "Montant HT"]].sort_values(["Date", "Boutique", "Commande"])
+    df_sp_export = pd.DataFrame(all_sp_orders).rename(columns={"date": "Date", "order_name": "Commande", "store": "Boutique", "ca_ht": "Montant HT", "country_code": "Pays", "compte": "Compte"})
+    export_sp_cols = ["Date", "Boutique", "Commande", "Pays", "Compte", "Montant HT"]
+    export_sp_cols = [c for c in export_sp_cols if c in df_sp_export.columns]
+    df_sp_export = df_sp_export[export_sp_cols].sort_values(["Date", "Boutique", "Commande"])
     st.download_button("📥 Export commandes Shopify (CSV)", df_sp_export.to_csv(index=False).encode("utf-8"), f"{TODAY} Commandes Shopify {periode_label}.csv", "text/csv")
+
+# ─── Pennylane ───
+st.markdown("### CA HT Pennylane")
+
+st.markdown("**Par boutique**")
+pl_store_rows = []
+for sname in sorted(STORE_PREFIXES.keys()):
+    pl_store_ca = round(sum(l["ca_ht"] for l in pl["lines"] if l.get("store") == sname), 2)
+    pl_store_count = sum(1 for l in pl["lines"] if l.get("store") == sname)
+    if pl_store_ca != 0 or pl_store_count > 0:
+        pl_store_rows.append({"Boutique": sname, "CA HT Pennylane": pl_store_ca, "Écritures": pl_store_count})
+unknown_pl = round(sum(l["ca_ht"] for l in pl["lines"] if l.get("store") is None), 2)
+unknown_count = sum(1 for l in pl["lines"] if l.get("store") is None)
+if unknown_pl or unknown_count:
+    pl_store_rows.append({"Boutique": "(INCONNU)", "CA HT Pennylane": unknown_pl, "Écritures": unknown_count})
+if pl_store_rows:
+    df_pl_stores = pd.DataFrame(pl_store_rows)
+    df_pl_stores = pd.concat([df_pl_stores, pd.DataFrame([{"Boutique": "TOTAL", "CA HT Pennylane": round(df_pl_stores["CA HT Pennylane"].sum(), 2), "Écritures": df_pl_stores["Écritures"].sum()}])], ignore_index=True)
+    st.dataframe(df_pl_stores, use_container_width=True, hide_index=True)
+
+st.markdown("**Par pays de livraison (compte comptable)**")
+pl_country_rows = []
+for acc, d in sorted(pl_account_data.items()):
+    label = d["name"] or ACCOUNT_LABELS.get(acc, "")
+    pl_country_rows.append({"Compte": acc, "Libellé": label, "CA HT Pennylane": round(d["ca_ht"], 2), "Écritures": d["count"]})
+if pl_country_rows:
+    df_pl_country = pd.DataFrame(pl_country_rows)
+    df_pl_country = pd.concat([df_pl_country, pd.DataFrame([{"Compte": "TOTAL", "Libellé": "", "CA HT Pennylane": round(df_pl_country["CA HT Pennylane"].sum(), 2), "Écritures": df_pl_country["Écritures"].sum()}])], ignore_index=True)
+    st.dataframe(df_pl_country, use_container_width=True, hide_index=True)
+
+if pl["lines"]:
+    df_pl_export = pd.DataFrame(pl["lines"]).rename(columns={"date": "Date", "entry_label": "Écriture", "invoice_number": "Facture", "order_ref": "Commande", "store": "Boutique", "account": "Compte", "account_name": "Libellé compte", "ca_ht": "Montant HT"})
+    df_pl_export = df_pl_export[["Date", "Boutique", "Compte", "Libellé compte", "Écriture", "Facture", "Commande", "Montant HT"]].sort_values(["Date", "Boutique", "Commande"])
+    st.download_button("📥 Export CA Pennylane détaillé (CSV)", df_pl_export.to_csv(index=False).encode("utf-8"), f"{TODAY} CA Pennylane Detail {periode_label}.csv", "text/csv")
 
 # ╔═══════════════════════════════════════════════════════════════╗
 # ║  4. SYNTHÈSE DES EXPORTS                                      ║
@@ -647,7 +817,9 @@ st.markdown("---")
 st.subheader("📦 Synthèse des exports")
 
 export_files = {}
-export_files[f"{TODAY} Dossier Cadrage CA {periode_label}.pdf"] = pdf_bytes
+export_files[f"{TODAY} Rapport Cadrage CA {periode_label}.pdf"] = pdf_bytes
+if order_rows:
+    export_files[f"{TODAY} Cadrage CA Commandes {periode_label}.csv"] = pd.DataFrame(order_rows).to_csv(index=False).encode("utf-8")
 if cadrage_rows:
     _df_exp_bout = pd.DataFrame(st.session_state.get("cadrage_boutique_data", cadrage_rows))
     _df_exp_bout["Montant écart restant"] = _df_exp_bout.apply(
@@ -655,25 +827,22 @@ if cadrage_rows:
     _exp_cols = ["Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart justifié", "Montant écart restant", "Commentaire"]
     _exp_cols = [c for c in _exp_cols if c in _df_exp_bout.columns]
     export_files[f"{TODAY} Cadrage CA Boutiques {periode_label}.csv"] = _df_exp_bout[_exp_cols].to_csv(index=False).encode("utf-8")
-if order_rows:
-    export_files[f"{TODAY} Cadrage CA Commandes {periode_label}.csv"] = pd.DataFrame(order_rows).to_csv(index=False).encode("utf-8")
-if pl["lines"]:
-    export_files[f"{TODAY} CA Pennylane Detail {periode_label}.csv"] = df_pl_export.to_csv(index=False).encode("utf-8")
+if cadrage_compte_rows:
+    export_files[f"{TODAY} Cadrage CA Pays {periode_label}.csv"] = df_comptes_exp[exp_cols_cpt].to_csv(index=False).encode("utf-8")
 if all_sp_orders:
     export_files[f"{TODAY} Commandes Shopify {periode_label}.csv"] = df_sp_export.to_csv(index=False).encode("utf-8")
+if pl["lines"]:
+    export_files[f"{TODAY} CA Pennylane Detail {periode_label}.csv"] = df_pl_export.to_csv(index=False).encode("utf-8")
 
-# Justification des écarts CSV
 justif_rows = [{"Boutique": r["Boutique"], "Écart": r["Écart"], "Montant écart justifié": r.get("Montant écart justifié", 0.0), "Montant écart restant": round(r["Écart"] - r.get("Montant écart justifié", 0.0), 2), "Commentaire": r.get("Commentaire", "")} for r in current_data if not ecart_boutique_ok(r["Écart"])]
 if justif_rows:
-    df_justif = pd.DataFrame(justif_rows)
-    export_files[f"{TODAY} Justification Ecarts {periode_label}.csv"] = df_justif.to_csv(index=False).encode("utf-8")
+    export_files[f"{TODAY} Justification Ecarts {periode_label}.csv"] = pd.DataFrame(justif_rows).to_csv(index=False).encode("utf-8")
 
 cols = st.columns(min(len(export_files), 3))
 for i, (fname, fbytes) in enumerate(export_files.items()):
     mime = "application/pdf" if fname.endswith(".pdf") else "text/csv"
     with cols[i % 3]:
         short_name = fname.replace(TODAY, "").replace(periode_label, "").strip()
-        # Remove file extension from display
         short_name = short_name.rsplit(".", 1)[0].strip()
         icon = "📄" if fname.endswith(".pdf") else "📊"
         st.download_button(f"{icon} {short_name}", fbytes, fname, mime, key=f"synth_{i}")
