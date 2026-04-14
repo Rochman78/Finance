@@ -51,11 +51,21 @@ total_ht = data["total_ht"]
 st.markdown("---")
 st.subheader("Résultat")
 
-col1, col2, col3 = st.columns(3)
+# Store lines in session state for editing
+if "recap_tva_lines" not in st.session_state or run:
+    st.session_state["recap_tva_lines"] = lines
+
+current_lines = st.session_state.get("recap_tva_lines", lines)
+
+nb_total = len(current_lines)
+nb_avec_tva = sum(1 for l in current_lines if l.get("vat_number"))
+nb_sans_tva = nb_total - nb_avec_tva
+
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total HT (707101)", f"{total_ht:,.2f} €")
-col2.metric("Nombre de factures", f"{data['nb_lignes']}")
-nb_avec_tva = sum(1 for l in lines if l.get("vat_number"))
+col2.metric("Nombre de factures", f"{nb_total}")
 col3.metric("Avec n° TVA intracom", f"{nb_avec_tva}")
+col4.metric("Sans n° TVA", f"{nb_sans_tva}")
 
 st.markdown(f"""
 <div style="background: linear-gradient(135deg, #EDE9FE, #DDD6FE); border: 1px solid #C4B5FD;
@@ -65,43 +75,86 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+if nb_sans_tva > 0:
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #FEF2F2, #FECACA); border: 1px solid #FCA5A5;
+                border-radius: 12px; padding: 1rem 1.5rem; text-align: center; margin: 0.5rem 0;">
+        <div style="font-size: 1.1rem; font-weight: 700; color: #991B1B;">⚠️ {nb_sans_tva} facture(s) sans n° TVA intracommunautaire</div>
+        <div style="font-size: 0.85rem; color: #B91C1C; margin-top: 0.3rem;">
+            Complétez les informations manquantes dans le tableau ci-dessous pour pouvoir exporter vers ProDouane
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # =============================================================
-# TABLEAU DÉTAILLÉ
+# TABLEAU DÉTAILLÉ (éditable)
 # =============================================================
 st.markdown("---")
 st.subheader("Détail par facture")
 
-if lines:
-    df = pd.DataFrame(lines)
+st.markdown("""
+<style>
+    [data-testid="stDataEditor"] [data-testid="column-header"]:has(span[title*="Client"]),
+    [data-testid="stDataEditor"] [data-testid="column-header"]:has(span[title*="TVA Intracom"]) {
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-bottom: 3px solid rgba(139, 92, 246, 0.5) !important;
+    }
+    [data-testid="stDataEditor"] th:has(span[title*="Client"]),
+    [data-testid="stDataEditor"] th:has(span[title*="TVA Intracom"]) {
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-bottom: 3px solid rgba(139, 92, 246, 0.5) !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+if current_lines:
+    df_edit = pd.DataFrame(current_lines)
     display_cols = ["date", "invoice_number", "client_name", "vat_number", "montant_ht", "regime"]
-    df_display = df[display_cols].copy()
-    df_display.columns = ["Date", "Facture", "Client", "N° TVA Intracom", "Montant HT", "Régime"]
+    df_edit_display = df_edit[display_cols].copy()
+    df_edit_display.columns = ["Date", "Facture", "✏️ Client", "✏️ N° TVA Intracom", "Montant HT", "Régime"]
 
-    def highlight_avoirs(row):
-        if row["Montant HT"] < 0:
-            return ["background-color: rgba(239, 68, 68, 0.12); color: #991B1B;"] * len(row)
-        return [""] * len(row)
-
-    st.dataframe(
-        df_display.style.apply(highlight_avoirs, axis=1),
+    edited = st.data_editor(
+        df_edit_display,
         use_container_width=True,
         hide_index=True,
-        height=min(600, 35 * (len(df_display) + 1)),
+        height=min(600, 35 * (len(df_edit_display) + 1)),
+        disabled=["Date", "Facture", "Montant HT", "Régime"],
         column_config={
             "Montant HT": st.column_config.NumberColumn(format="%.2f"),
+            "✏️ Client": st.column_config.TextColumn(width="medium"),
+            "✏️ N° TVA Intracom": st.column_config.TextColumn(width="medium"),
         },
     )
 
+    # Sync edits back to session state
+    if edited is not None:
+        _changed = False
+        for idx, row in edited.iterrows():
+            if idx < len(st.session_state["recap_tva_lines"]):
+                r = st.session_state["recap_tva_lines"][idx]
+                new_name = row.get("✏️ Client", "")
+                new_vat = row.get("✏️ N° TVA Intracom", "")
+                if r.get("client_name", "") != new_name:
+                    r["client_name"] = new_name
+                    _changed = True
+                if r.get("vat_number", "") != new_vat:
+                    r["vat_number"] = new_vat
+                    _changed = True
+        if _changed:
+            st.rerun()
+
     # Synthèse par régime
     col_s1, col_s2 = st.columns(2)
-    ventes = [l for l in lines if l["regime"] == 21]
-    avoirs = [l for l in lines if l["regime"] == 25]
+    ventes = [l for l in current_lines if l["regime"] == 21]
+    avoirs = [l for l in current_lines if l["regime"] == 25]
     col_s1.metric("Ventes (régime 21)", f"{sum(l['montant_ht'] for l in ventes):,.2f} € ({len(ventes)} lignes)")
     if avoirs:
         col_s2.metric("Avoirs (régime 25)", f"{sum(l['montant_ht'] for l in avoirs):,.2f} € ({len(avoirs)} lignes)")
 
-    # Export CSV détaillé
-    csv_detail = df_display.to_csv(index=False).encode("utf-8")
+    # Export CSV détaillé (from session state)
+    df_exp = pd.DataFrame(current_lines)[["date", "invoice_number", "client_name", "vat_number", "montant_ht", "regime"]]
+    df_exp.columns = ["Date", "Facture", "Client", "N° TVA Intracom", "Montant HT", "Régime"]
+    csv_detail = df_exp.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Export détail (CSV)", csv_detail, f"{TODAY} Etat Recap TVA {mois_label}.csv", "text/csv")
 
 else:
@@ -113,13 +166,12 @@ else:
 st.markdown("---")
 st.subheader("🇫🇷 Export ProDouane")
 
-if lines:
-    # Filtrer : uniquement les lignes avec un n° de TVA intracom
-    prodouane_lines = [l for l in lines if l.get("vat_number")]
+if current_lines:
+    # Utiliser les données éditées (session state)
+    prodouane_lines = [l for l in current_lines if l.get("vat_number")]
+    sans_tva = [l for l in current_lines if not l.get("vat_number")]
 
     if prodouane_lines:
-        st.caption(f"{len(prodouane_lines)} ligne(s) avec n° TVA intracommunautaire")
-
         prodouane_rows = []
         for l in prodouane_lines:
             prodouane_rows.append({
@@ -129,7 +181,18 @@ if lines:
             })
 
         df_prodouane = pd.DataFrame(prodouane_rows)
-        st.dataframe(df_prodouane, use_container_width=True, hide_index=True)
+
+        def highlight_avoirs_prodouane(row):
+            if row["REGIME"] == 25:
+                return ["background-color: rgba(239, 68, 68, 0.15); color: #991B1B;"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(df_prodouane.style.apply(highlight_avoirs_prodouane, axis=1), use_container_width=True, hide_index=True)
+
+        st.caption(f"{len(prodouane_lines)} ligne(s) dans l'export")
+
+        if sans_tva:
+            st.warning(f"⚠️ {len(sans_tva)} ligne(s) sans n° TVA — complétez-les dans le tableau ci-dessus pour les inclure")
 
         # Export CSV sans en-tête
         csv_prodouane = df_prodouane.to_csv(index=False, header=False).encode("utf-8")
@@ -140,12 +203,7 @@ if lines:
             "text/csv",
             type="primary",
         )
-
-        # Lignes sans TVA (pour info)
-        sans_tva = [l for l in lines if not l.get("vat_number")]
-        if sans_tva:
-            st.caption(f"⚠️ {len(sans_tva)} ligne(s) sans n° TVA intracom — non incluses dans l'export ProDouane")
     else:
-        st.warning("Aucune ligne avec n° TVA intracommunautaire trouvée")
+        st.warning("Aucune ligne avec n° TVA — complétez les informations dans le tableau ci-dessus")
 else:
     st.info("Lancez d'abord la génération de l'état")

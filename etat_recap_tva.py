@@ -25,15 +25,23 @@ COMPTE_RECAP = "707101"
 
 
 def pl_get(url: str, params: dict = None) -> dict | None:
-    for attempt in range(3):
-        resp = requests.get(url, headers=PL_HEADERS, params=params, timeout=30)
+    for attempt in range(6):
+        try:
+            resp = requests.get(url, headers=PL_HEADERS, params=params, timeout=30)
+        except requests.exceptions.RequestException as e:
+            log.warning(f"⚠️ Connexion error ({e.__class__.__name__}) — retry {attempt+1}/6")
+            time.sleep(min(2 ** attempt, 15))
+            continue
         if resp.status_code == 200:
             return resp.json()
         if resp.status_code == 429:
-            time.sleep(min(2 ** attempt, 10))
+            wait = min(2 ** (attempt + 1), 15)
+            log.info(f"⏳ Rate limit — pause {wait}s (attempt {attempt+1}/6)")
+            time.sleep(wait)
             continue
         log.error(f"❌ Pennylane GET {url}: {resp.status_code} {resp.text[:200]}")
         return None
+    log.error(f"❌ Echec après 6 tentatives: {url}")
     return None
 
 
@@ -125,24 +133,28 @@ def get_etat_recap(year: int, month: int) -> dict:
         vat_number = ""
 
         if invoice_number and invoice_number not in invoice_cache:
+            time.sleep(0.3)  # Eviter le rate limit
             filter_inv = json.dumps([{"field": "invoice_number", "operator": "eq", "value": invoice_number}])
             inv_data = pl_get(f"{PL_BASE}/customer_invoices", {"filter": filter_inv, "limit": 1})
             if inv_data and inv_data.get("items"):
                 cust_url = inv_data["items"][0].get("customer", {}).get("url", "")
                 invoice_cache[invoice_number] = cust_url
             else:
+                log.warning(f"⚠️ Facture {invoice_number} non trouvée via API")
                 invoice_cache[invoice_number] = ""
 
         if invoice_number:
             cust_url = invoice_cache.get(invoice_number, "")
             if cust_url:
                 if cust_url not in customer_cache:
+                    time.sleep(0.3)  # Eviter le rate limit
                     cust = pl_get(cust_url)
                     if cust:
                         name = cust.get("name", "") or f"{cust.get('first_name', '')} {cust.get('last_name', '')}".strip()
                         vat = cust.get("vat_number", "") or ""
                         customer_cache[cust_url] = {"name": name, "vat": vat}
                     else:
+                        log.warning(f"⚠️ Customer non chargé: {cust_url}")
                         customer_cache[cust_url] = {"name": "", "vat": ""}
                 client_name = customer_cache[cust_url]["name"]
                 vat_number = customer_cache[cust_url]["vat"]
