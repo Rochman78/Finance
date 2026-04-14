@@ -240,6 +240,7 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
                 "store": sname,
                 "country_code": country_code,
                 "compte": compte,
+                "financial_status": order.get("financial_status", ""),
             })
 
         total_ca = round(total_ca, 2)

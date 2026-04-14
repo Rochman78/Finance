@@ -7,6 +7,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+st.switch_page("pages/1_Cadrage_CA.py")
+
 st.markdown("""
 <style>
     /* Hide default sidebar page names */
@@ -130,29 +132,39 @@ st.markdown("""
 
 # Sidebar
 st.sidebar.page_link("Accueil.py", label="**AURALIS FINANCES**")
-st.sidebar.markdown('<div class="sidebar-section">Cadrage compta vs outils</div>', unsafe_allow_html=True)
-st.sidebar.page_link("pages/1_Cadrage_CA.py", label="📈 Cadrage CA")
-st.sidebar.page_link("pages/2_Cadrage_TVA.py", label="🧾 Cadrage TVA")
-st.sidebar.page_link("pages/3_Cadrage_Frais.py", label="📊 Cadrage Frais")
-st.sidebar.page_link("pages/4_Cadrage_Encaissements.py", label="💶 Cadrage Encaissements")
-st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
-st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
-st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")
+mode = st.sidebar.segmented_control("", ["Cabinet", "E-commerçant"], default="Cabinet", key="app_mode_home", label_visibility="collapsed")
+
+if mode == "Cabinet":
+    st.sidebar.markdown('<div class="sidebar-section">Cadrage compta vs outils</div>', unsafe_allow_html=True)
+    st.sidebar.page_link("pages/1_Cadrage_CA.py", label="📈 Cadrage CA")
+    st.sidebar.page_link("pages/2_Cadrage_TVA.py", label="🧾 Cadrage TVA")
+    st.sidebar.page_link("pages/3_Cadrage_Frais.py", label="📊 Cadrage Frais")
+    st.sidebar.page_link("pages/4_Cadrage_Encaissements.py", label="💶 Cadrage Encaissements")
+    st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
+    st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
+    st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")
+else:
+    st.sidebar.markdown('<div class="sidebar-section">Outils de pilotage</div>', unsafe_allow_html=True)
+    st.sidebar.page_link("pages/7_Dashboard.py", label="📊 Dashboard")
+    st.sidebar.page_link("pages/8_Suivi_Tresorerie.py", label="💰 Suivi de la trésorerie")
 
 # Main
 st.markdown('<div class="main-title">AURALIS FINANCES</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">L&#39;outil pensé pour vos dossiers e-commerce.</div>', unsafe_allow_html=True)
 
-col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-
-with col1:
-    st.page_link("pages/1_Cadrage_CA.py", label="📈  Cadrage du CA\n\nChiffre d'affaires commandes vs factures", use_container_width=True)
-
-with col2:
-    st.page_link("pages/2_Cadrage_TVA.py", label="🧾  Cadrage de la TVA\n\nTVA collectée commandes vs factures", use_container_width=True)
-
-with col3:
-    st.page_link("pages/3_Cadrage_Frais.py", label="📊  Cadrage des Frais\n\nFrais de paiement Shopify vs comptabilité", use_container_width=True)
-
-with col4:
-    st.page_link("pages/4_Cadrage_Encaissements.py", label="€  Cadrage Encaissements\n\nComptes clients 411 vs payouts Shopify", use_container_width=True)
+if mode == "Cabinet":
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    with col1:
+        st.page_link("pages/1_Cadrage_CA.py", label="📈  Cadrage du CA\n\nChiffre d'affaires commandes vs factures", use_container_width=True)
+    with col2:
+        st.page_link("pages/2_Cadrage_TVA.py", label="🧾  Cadrage de la TVA\n\nTVA collectée commandes vs factures", use_container_width=True)
+    with col3:
+        st.page_link("pages/3_Cadrage_Frais.py", label="📊  Cadrage des Frais\n\nFrais de paiement Shopify vs comptabilité", use_container_width=True)
+    with col4:
+        st.page_link("pages/4_Cadrage_Encaissements.py", label="💶  Cadrage Encaissements\n\nComptes clients 411 vs payouts Shopify", use_container_width=True)
+else:
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.page_link("pages/7_Dashboard.py", label="📊  Dashboard\n\nVue d'ensemble de votre activité", use_container_width=True)
+    with col2:
+        st.page_link("pages/8_Suivi_Tresorerie.py", label="💰  Suivi de la trésorerie\n\nFlux de trésorerie et prévisions", use_container_width=True)

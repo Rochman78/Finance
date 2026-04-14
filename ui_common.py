@@ -46,15 +46,42 @@ def setup_page():
     """, unsafe_allow_html=True)
 
     # Sidebar navigation
-    st.sidebar.page_link("Accueil.py", label="**AURALIS FINANCES**")
-    st.sidebar.markdown('<div class="sidebar-section">Cadrage compta vs outils</div>', unsafe_allow_html=True)
-    st.sidebar.page_link("pages/1_Cadrage_CA.py", label="📈 Cadrage CA")
-    st.sidebar.page_link("pages/2_Cadrage_TVA.py", label="🧾 Cadrage TVA")
-    st.sidebar.page_link("pages/3_Cadrage_Frais.py", label="📊 Cadrage Frais")
-    st.sidebar.page_link("pages/4_Cadrage_Encaissements.py", label="💶 Cadrage Encaissements")
-    st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
-    st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
-    st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")
+    st.sidebar.markdown("""
+    <div style="padding: 0.5rem 0 0.2rem 0.2rem;">
+        <div style="font-size: 1.3rem; font-weight: 800; letter-spacing: 0.05em;">AURALIS FINANCES</div>
+        <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 0.1rem;">L'outil pensé pour vos dossiers e-commerce.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if "_app_mode" not in st.session_state:
+        st.session_state["_app_mode"] = "Cabinet"
+
+    mode = st.sidebar.radio("", ["🏢 Cabinet", "🛒 E-commerçant"],
+        index=0 if st.session_state["_app_mode"] == "Cabinet" else 1,
+        key="app_mode_radio", horizontal=True, label_visibility="collapsed")
+
+    selected = "Cabinet" if "Cabinet" in mode else "E-commerçant"
+    if selected != st.session_state["_app_mode"]:
+        st.session_state["_app_mode"] = selected
+        if selected == "Cabinet":
+            st.switch_page("pages/1_Cadrage_CA.py")
+        else:
+            st.switch_page("pages/7_Dashboard.py")
+
+    current_mode = st.session_state["_app_mode"]
+    if current_mode == "Cabinet":
+        st.sidebar.markdown('<div class="sidebar-section">Cadrage compta vs outils</div>', unsafe_allow_html=True)
+        st.sidebar.page_link("pages/1_Cadrage_CA.py", label="📈 Cadrage CA")
+        st.sidebar.page_link("pages/2_Cadrage_TVA.py", label="🧾 Cadrage TVA")
+        st.sidebar.page_link("pages/3_Cadrage_Frais.py", label="📊 Cadrage Frais")
+        st.sidebar.page_link("pages/4_Cadrage_Encaissements.py", label="💶 Cadrage Encaissements")
+        st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
+        st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
+        st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")
+    else:
+        st.sidebar.markdown('<div class="sidebar-section">Outils de pilotage</div>', unsafe_allow_html=True)
+        st.sidebar.page_link("pages/7_Dashboard.py", label="📊 Dashboard")
+        st.sidebar.page_link("pages/8_Suivi_Tresorerie.py", label="💰 Suivi de la trésorerie")
 
 
 def period_selector(key_prefix: str = "period", default_date: date = None) -> tuple[date, date]:
