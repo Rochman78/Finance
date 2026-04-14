@@ -105,7 +105,7 @@ def _get_account_total(account_number: str, date_min: str, date_max: str) -> flo
     return round(total, 2)
 
 
-def get_controle_base_taux(year: int, month: int) -> dict:
+def get_controle_base_taux(date_min: str, date_max: str) -> dict:
     """
     Pour chaque pays OSS, récupère :
     - CA HT depuis le compte produit (70703XX)
@@ -113,10 +113,6 @@ def get_controle_base_taux(year: int, month: int) -> dict:
     - Calcule TVA théorique = CA HT × taux
     - Écart = TVA collectée - TVA théorique
     """
-    last_day = calendar.monthrange(year, month)[1]
-    date_min = f"{year}-{month:02d}-01"
-    date_max = f"{year}-{month:02d}-{last_day:02d}"
-
     log.info(f"Contrôle Base × Taux OSS — {date_min} → {date_max}")
 
     rows = []

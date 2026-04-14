@@ -4,7 +4,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime
 from etat_recap_tva import get_etat_recap
-from ui_common import setup_page
+from ui_common import setup_page, period_selector
 
 setup_page()
 
@@ -14,30 +14,21 @@ st.title("📋 État récapitulatif de TVA")
 st.markdown("Décomposition du compte **707101** par facture — Export ProDouane")
 
 # =============================================================
-# SÉLECTION DU MOIS
+# SÉLECTION DE PÉRIODE
 # =============================================================
-col1, col2 = st.columns([1, 3])
-with col1:
-    mois_options = [
-        "Janvier 2026", "Février 2026", "Mars 2026", "Avril 2026",
-        "Mai 2026", "Juin 2026", "Juillet 2026", "Août 2026",
-        "Septembre 2026", "Octobre 2026", "Novembre 2026", "Décembre 2026",
-    ]
-    mois_idx = st.selectbox("Mois", range(len(mois_options)), format_func=lambda i: mois_options[i], index=2)
-    year = 2026
-    month = mois_idx + 1
-with col2:
-    st.write("")
-    st.write("")
-    run = st.button("🚀 Générer l'état", type="primary", use_container_width=True)
+date_min, date_max = period_selector(key_prefix="recap_tva")
+run = st.button("🚀 Générer l'état", type="primary", use_container_width=True)
 
 if run:
-    with st.spinner(f"Chargement du compte 707101 — {mois_options[mois_idx]}..."):
-        st.session_state["recap_tva_data"] = get_etat_recap(year, month)
-        st.session_state["recap_tva_mois"] = mois_options[mois_idx]
+    date_min_str = date_min.strftime("%Y-%m-%d")
+    date_max_str = date_max.strftime("%Y-%m-%d")
+    periode_label = f"du {date_min_str} au {date_max_str}"
+    with st.spinner(f"Chargement du compte 707101 — {periode_label}..."):
+        st.session_state["recap_tva_data"] = get_etat_recap(date_min_str, date_max_str)
+        st.session_state["recap_tva_mois"] = periode_label
 
 if "recap_tva_data" not in st.session_state:
-    st.info("Sélectionnez un mois et cliquez sur **Générer l'état**")
+    st.info("Sélectionnez une période et cliquez sur **Générer l'état**")
     st.stop()
 
 data = st.session_state["recap_tva_data"]

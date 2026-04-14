@@ -2,6 +2,8 @@
 Styles et navigation partagés pour toutes les pages Auralis Finances.
 """
 import streamlit as st
+from datetime import date, timedelta
+import calendar
 
 
 def setup_page():
@@ -53,3 +55,15 @@ def setup_page():
     st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
     st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
     st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")
+
+
+def period_selector(key_prefix: str = "period", default_date: date = None) -> tuple[date, date]:
+    """Sélecteur de période simple date début / date fin."""
+    if default_date is None:
+        default_date = date(2026, 3, 1)
+    col1, col2 = st.columns(2)
+    with col1:
+        d_min = st.date_input("Date début", value=default_date, key=f"{key_prefix}_min")
+    with col2:
+        d_max = st.date_input("Date fin", value=default_date, key=f"{key_prefix}_max")
+    return d_min, d_max

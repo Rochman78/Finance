@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date, timedelta, datetime
 from collections import defaultdict
 from cadrage_frais_shopify import get_frais_shopify_fast, get_frais_shopify_detail, get_pennylane_627_detail, STORES
-from ui_common import setup_page
+from ui_common import setup_page, period_selector
 from fpdf import FPDF
 
 setup_page()
@@ -30,15 +30,8 @@ def ecart_boutique_ok(e):
 # =============================================================
 # SÉLECTION DE PÉRIODE
 # =============================================================
-col1, col2, col3 = st.columns([1, 1, 2])
-with col1:
-    date_min = st.date_input("Date début", value=date(2026, 3, 1))
-with col2:
-    date_max = st.date_input("Date fin", value=date(2026, 3, 1))
-with col3:
-    st.write("")
-    st.write("")
-    run = st.button("🚀 Lancer le cadrage", type="primary", use_container_width=True)
+date_min, date_max = period_selector(key_prefix="frais")
+run = st.button("🚀 Lancer le cadrage", type="primary", use_container_width=True)
 
 if run:
     date_min_str = date_min.strftime("%Y-%m-%d")

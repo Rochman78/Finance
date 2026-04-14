@@ -64,17 +64,13 @@ def pl_get_all(endpoint: str, params: dict = None) -> list:
     return all_items
 
 
-def get_etat_recap(year: int, month: int) -> dict:
+def get_etat_recap(date_min: str, date_max: str) -> dict:
     """
     1. Récupère tous les comptes 707101 (plusieurs IDs possibles selon vat_rate)
     2. Charge les lignes du grand livre de chaque compte
-    3. Filtre par mois
+    3. Filtre par période
     4. Pour chaque ligne, remonte à l'écriture → facture → client → vat_number
     """
-    last_day = calendar.monthrange(year, month)[1]
-    date_min = f"{year}-{month:02d}-01"
-    date_max = f"{year}-{month:02d}-{last_day:02d}"
-
     log.info(f"État récap TVA — compte {COMPTE_RECAP} — {date_min} → {date_max}")
 
     # Étape 1 : trouver tous les comptes 707101
