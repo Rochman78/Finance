@@ -49,3 +49,7 @@ def setup_page():
     st.sidebar.page_link("pages/1_Cadrage_CA.py", label="📈 Cadrage CA")
     st.sidebar.page_link("pages/2_Cadrage_TVA.py", label="🧾 Cadrage TVA")
     st.sidebar.page_link("pages/3_Cadrage_Frais.py", label="📊 Cadrage Frais")
+    st.sidebar.page_link("pages/4_Cadrage_Encaissements.py", label="💶 Cadrage Encaissements")
+    st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
+    st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
+    st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")

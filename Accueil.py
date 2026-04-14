@@ -78,6 +78,7 @@ st.markdown("""
     .card-icon.ca { background: linear-gradient(135deg, #EDE9FE, #DDD6FE); }
     .card-icon.tva { background: linear-gradient(135deg, #F3E8FF, #E9D5FF); }
     .card-icon.frais { background: linear-gradient(135deg, #EDE9FE, #C4B5FD); }
+    .card-icon.enc { background: linear-gradient(135deg, #FEF3C7, #FDE68A); }
     .card-title {
         font-size: 1.1rem;
         font-weight: 700;
@@ -133,12 +134,16 @@ st.sidebar.markdown('<div class="sidebar-section">Cadrage compta vs outils</div>
 st.sidebar.page_link("pages/1_Cadrage_CA.py", label="📈 Cadrage CA")
 st.sidebar.page_link("pages/2_Cadrage_TVA.py", label="🧾 Cadrage TVA")
 st.sidebar.page_link("pages/3_Cadrage_Frais.py", label="📊 Cadrage Frais")
+st.sidebar.page_link("pages/4_Cadrage_Encaissements.py", label="💶 Cadrage Encaissements")
+st.sidebar.markdown('<div class="sidebar-section">Déclarations & exports</div>', unsafe_allow_html=True)
+st.sidebar.page_link("pages/5_Etat_Recap_TVA.py", label="📋 État récap de TVA")
+st.sidebar.page_link("pages/6_TVA_OSS.py", label="🇪🇺 TVA OSS")
 
 # Main
 st.markdown('<div class="main-title">AURALIS FINANCES</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">L&#39;outil pensé pour vos dossiers e-commerce.</div>', unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns([1, 1, 1])
+col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
 with col1:
     st.page_link("pages/1_Cadrage_CA.py", label="📈  Cadrage du CA\n\nChiffre d'affaires commandes vs factures", use_container_width=True)
@@ -148,3 +153,6 @@ with col2:
 
 with col3:
     st.page_link("pages/3_Cadrage_Frais.py", label="📊  Cadrage des Frais\n\nFrais de paiement Shopify vs comptabilité", use_container_width=True)
+
+with col4:
+    st.page_link("pages/4_Cadrage_Encaissements.py", label="€  Cadrage Encaissements\n\nComptes clients 411 vs payouts Shopify", use_container_width=True)

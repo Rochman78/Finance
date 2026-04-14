@@ -32,9 +32,9 @@ def ecart_boutique_ok(e):
 # =============================================================
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
-    date_min = st.date_input("Date début", value=date(2026, 3, 1))
+    date_min = st.date_input("Date début", value=date(2026, 3, 1), min_value=date(2026, 3, 1), max_value=date(2026, 3, 15))
 with col2:
-    date_max = st.date_input("Date fin", value=date(2026, 3, 1))
+    date_max = st.date_input("Date fin", value=date(2026, 3, 1), min_value=date(2026, 3, 1), max_value=date(2026, 3, 15))
 with col3:
     st.write("")
     st.write("")
@@ -432,13 +432,16 @@ st.subheader("Détail du cadrage")
 
 st.markdown("""
 <style>
+    /* Highlight editable column headers in violet */
     [data-testid="stDataEditor"] [data-testid="column-header"]:has(span[title*="justifié"]),
     [data-testid="stDataEditor"] [data-testid="column-header"]:has(span[title*="Commentaire"]) {
-        background-color: rgba(124, 58, 237, 0.12) !important;
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-bottom: 3px solid rgba(139, 92, 246, 0.5) !important;
     }
     [data-testid="stDataEditor"] th:has(span[title*="justifié"]),
     [data-testid="stDataEditor"] th:has(span[title*="Commentaire"]) {
-        background-color: rgba(124, 58, 237, 0.12) !important;
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-bottom: 3px solid rgba(139, 92, 246, 0.5) !important;
     }
 </style>
 """, unsafe_allow_html=True)

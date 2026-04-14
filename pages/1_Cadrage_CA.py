@@ -22,9 +22,9 @@ st.markdown("Commandes Shopify (CA HT) vs Comptabilité Pennylane (707 / VT)")
 # =============================================================
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
-    date_min = st.date_input("Date début", value=date(2026, 3, 1))
+    date_min = st.date_input("Date début", value=date(2026, 3, 1), min_value=date(2026, 3, 1), max_value=date(2026, 3, 15))
 with col2:
-    date_max = st.date_input("Date fin", value=date(2026, 3, 1))
+    date_max = st.date_input("Date fin", value=date(2026, 3, 1), min_value=date(2026, 3, 1), max_value=date(2026, 3, 15))
 with col3:
     st.write("")
     st.write("")
@@ -372,22 +372,26 @@ for order in all_orders_list:
     ecart_o = round(sp_ht - pl_ht, 2)
     if abs(ecart_o) < SEUIL_ECART:
         ecart_o = 0.0
+    invoice = pl_o.get("invoice", "") if pl_o else ""
     order_rows.append({
-        "Commande": order, "Boutique": (sp_o["store"] if sp_o else pl_o.get("store")) or "?",
+        "Commande": order, "Facture": invoice or "",
+        "Boutique": (sp_o["store"] if sp_o else pl_o.get("store")) or "?",
         "CA HT Shopify": sp_ht, "CA HT Pennylane": pl_ht, "Écart": ecart_o,
         "Commentaire": "",
     })
 
 st.markdown("""
 <style>
-    /* Highlight editable columns in data_editor */
+    /* Highlight editable column headers in violet */
     [data-testid="stDataEditor"] [data-testid="column-header"]:has(span[title*="justifié"]),
     [data-testid="stDataEditor"] [data-testid="column-header"]:has(span[title*="Commentaire"]) {
-        background-color: rgba(124, 58, 237, 0.12) !important;
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-bottom: 3px solid rgba(139, 92, 246, 0.5) !important;
     }
     [data-testid="stDataEditor"] th:has(span[title*="justifié"]),
     [data-testid="stDataEditor"] th:has(span[title*="Commentaire"]) {
-        background-color: rgba(124, 58, 237, 0.12) !important;
+        background-color: rgba(139, 92, 246, 0.18) !important;
+        border-bottom: 3px solid rgba(139, 92, 246, 0.5) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -519,12 +523,12 @@ with tab_commande:
         if filter_store != "Toutes":
             df_orders_display = df_orders_display[df_orders_display["Boutique"] == filter_store]
 
-        display_cols_cmd = ["Commande", "Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart justifié", "Montant écart restant", "Statut", "Commentaire"]
+        display_cols_cmd = ["Boutique", "Commande", "Facture", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart justifié", "Montant écart restant", "Statut", "Commentaire"]
 
         edited_orders = st.data_editor(
             df_orders_display[display_cols_cmd],
             use_container_width=True, hide_index=True,
-            disabled=["Commande", "Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart restant", "Statut"],
+            disabled=["Commande", "Facture", "Boutique", "CA HT Shopify", "CA HT Pennylane", "Écart", "Montant écart restant", "Statut"],
             column_config={
                 "Commentaire": st.column_config.TextColumn("✏️ Commentaire", width="large"),
                 "CA HT Shopify": st.column_config.NumberColumn(format="%.2f"),

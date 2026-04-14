@@ -108,8 +108,7 @@ def pl_get_account_id(number: str) -> int | None:
 # SHOPIFY — Frais réels par boutique
 # =============================================================
 def get_frais_shopify_fast(date_min: str, date_max: str) -> dict:
-    """Version rapide : frais agrégés par boutique et par jour, SANS appel GET /orders/{id}.
-    Retourne {store: {frais, nb_payouts, by_date: {date: {frais, nb_txns}}}}"""
+    """Version rapide : frais agrégés par boutique et par jour, SANS appel GET /orders/{id}."""
     result = {}
     for store_config in STORES:
         sname = store_config["name"]
@@ -148,8 +147,7 @@ def get_frais_shopify_fast(date_min: str, date_max: str) -> dict:
 
 
 def get_frais_shopify_detail(date_min: str, date_max: str) -> dict:
-    """Version détaillée : avec appel GET /orders/{id} pour chaque transaction (lent).
-    Retourne {store: {frais, nb_payouts, transactions: [{order_id, order_name, amount, fee}]}}"""
+    """Version détaillée : avec appel GET /orders/{id} pour chaque transaction (lent)."""
     result = {}
     for store_config in STORES:
         sname = store_config["name"]
@@ -294,12 +292,13 @@ def get_pennylane_627_detail(date_min: str, date_max: str) -> dict:
             else:
                 lines_627["shopify"].append(info)
 
-    return {
+    result = {
         "lines_627": lines_627,
         "ecart_471": ecart_471_lines,
-        "matched_orders": matched_orders,
+        "matched_orders": list(matched_orders),
         "nb_entries": len(entries),
     }
+    return result
 
 # =============================================================
 # CADRAGE
@@ -330,7 +329,7 @@ def cadrage(date_min: str, date_max: str, store_filter: str | None = None, fix: 
         for txn in sdata.get("transactions", []):
             if txn.get("order_name"):
                 all_shopify_orders.add(txn["order_name"])
-    unmatched = all_shopify_orders - pl_data["matched_orders"]
+    unmatched = all_shopify_orders - set(pl_data["matched_orders"])
 
     unmatched_details = []
     unmatched_fees = 0.0

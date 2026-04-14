@@ -119,7 +119,7 @@ def get_ca_shopify(date_min: str, date_max: str) -> dict:
             "status": "any",
             "created_at_min": date_min_iso,
             "created_at_max": date_max_iso,
-            "fields": "name,total_price,total_tax,created_at,financial_status",
+            "fields": "id,name,total_price,total_tax,created_at,financial_status",
             "limit": 250,
         }
 
@@ -224,18 +224,34 @@ def _load_invoices_index(date_min: str, date_max: str) -> dict:
     return index
 
 
+_account_name_cache = {}
+
+def _get_account_name(number: str) -> str:
+    """Récupère le libellé d'un compte via l'API ledger_accounts (avec cache)."""
+    if number in _account_name_cache:
+        return _account_name_cache[number]
+    filter_param = json.dumps([{"field": "number", "operator": "eq", "value": number}])
+    data = pl_get(f"{PL_BASE}/ledger_accounts", {"filter": filter_param, "limit": 1})
+    label = ""
+    if data:
+        for item in data.get("items", []):
+            if item.get("number") == number:
+                label = item.get("label", "")
+                break
+    _account_name_cache[number] = label
+    return label
+
+
 def get_ca_pennylane(date_min: str, date_max: str) -> dict:
     """
     Récupère le CA HT depuis la comptabilité : crédits du compte 707 dans le journal VT.
-    Pour chaque écriture, extrait le numéro de facture du label, puis retrouve le numéro
-    de commande Shopify via la facture → special_mention → rattache à une boutique.
 
     Retourne {
         total_ht: float,
         nb_ecritures: int,
         by_date: {date: {ca_ht, nb_ecritures}},
         by_store: {store: {ca_ht, nb_ecritures}},
-        lines: [{date, entry_label, label, ca_ht, order_ref, store, account, invoice_number}]
+        lines: [{date, entry_label, label, ca_ht, order_ref, store, account, account_name, invoice_number}]
     }
     """
     # Step 1: Load invoice index (invoice_number → order_ref)
@@ -308,7 +324,7 @@ def get_ca_pennylane(date_min: str, date_max: str) -> dict:
                 if not acc_number.startswith("707"):
                     continue
 
-                acc_name = acc.get("name", "")
+                acc_name = acc.get("name", "") or acc.get("label", "") or _get_account_name(acc_number)
                 debit = float(line.get("debit") or 0)
                 credit = float(line.get("credit") or 0)
                 ca_ht = credit - debit
@@ -351,10 +367,11 @@ def get_ca_pennylane(date_min: str, date_max: str) -> dict:
 
     log.info(f"Pennylane VT/707 : {len(all_lines)} ligne(s), CA HT = {total_ht:.2f}€")
 
-    return {
+    result = {
         "total_ht": total_ht,
         "nb_ecritures": len(all_lines),
         "by_date": by_date,
         "by_store": by_store,
         "lines": all_lines,
     }
+    return result
