@@ -95,6 +95,68 @@ def pl_get(url: str, params: dict = None) -> dict | None:
 
 
 # =============================================================
+# MAPPING PAYS → COMPTE TVA
+# =============================================================
+EU_COUNTRIES = {"DE", "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "GR", "HU",
+                "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "SE", "ES"}
+
+COUNTRY_TO_TVA_ACCOUNT = {
+    "FR": "44571009",
+    "DE": "44572001",
+    "AT": "44572002",
+    "BE": "44572003",
+    "HR": "44572006",
+    "DK": "44572007",
+    "ES": "44572008",
+    "GR": "44572011",
+    "HU": "44572012",
+    "IE": "44572013",
+    "IT": "44572014",
+    "LU": "44572017",
+    "NL": "44572019",
+    "PT": "44572021",
+    "CZ": "44572022",
+    "RO": "44572023",
+    "SI": "44572025",
+    "SE": "44572026",
+}
+
+TVA_ACCOUNT_LABELS = {
+    "44571009": "TVA collectee France 20%",
+    "44572001": "TVA collectee OSS - Allemagne",
+    "44572002": "TVA collectee OSS - Autriche",
+    "44572003": "TVA collectee OSS - Belgique",
+    "44572006": "TVA collectee OSS - Croatie",
+    "44572007": "TVA collectee OSS - Danemark",
+    "44572008": "TVA collectee OSS - Espagne",
+    "44572011": "TVA collectee OSS - Grece",
+    "44572012": "TVA collectee OSS - Hongrie",
+    "44572013": "TVA collectee OSS - Irlande",
+    "44572014": "TVA collectee OSS - Italie",
+    "44572017": "TVA collectee OSS - Luxembourg",
+    "44572019": "TVA collectee OSS - Pays-Bas",
+    "44572021": "TVA collectee OSS - Portugal",
+    "44572022": "TVA collectee OSS - Rep. Tcheque",
+    "44572023": "TVA collectee OSS - Roumanie",
+    "44572025": "TVA collectee OSS - Slovenie",
+    "44572026": "TVA collectee OSS - Suede",
+}
+
+COUNTRY_NAMES = {"FR": "France", "DE": "Allemagne", "AT": "Autriche", "BE": "Belgique", "HR": "Croatie",
+    "DK": "Danemark", "ES": "Espagne", "GR": "Grece", "HU": "Hongrie", "IE": "Irlande", "IT": "Italie",
+    "LU": "Luxembourg", "NL": "Pays-Bas", "PT": "Portugal", "CZ": "Rep. Tcheque", "RO": "Roumanie",
+    "SI": "Slovenie", "SE": "Suede", "GB": "Royaume-Uni", "CH": "Suisse", "US": "Etats-Unis"}
+
+
+def _country_to_tva_account(country_code: str, total_tax: float) -> str:
+    """Détermine le compte TVA en fonction du pays et du montant de TVA."""
+    if not country_code or total_tax == 0:
+        return ""  # Pas de TVA (B2B intracom, export, ou pas de pays)
+    cc = country_code.upper()
+    return COUNTRY_TO_TVA_ACCOUNT.get(cc, "")
+
+
+# =============================================================
 # SHOPIFY — TVA par boutique et par jour
 # =============================================================
 def get_tva_shopify(date_min: str, date_max: str) -> dict:
@@ -118,7 +180,7 @@ def get_tva_shopify(date_min: str, date_max: str) -> dict:
             "status": "any",
             "created_at_min": date_min_iso,
             "created_at_max": date_max_iso,
-            "fields": "id,name,total_price,total_tax,created_at,financial_status",
+            "fields": "id,name,total_price,total_tax,created_at,financial_status,shipping_address",
             "limit": 250,
         }
 
@@ -154,6 +216,10 @@ def get_tva_shopify(date_min: str, date_max: str) -> dict:
             order_name = m.group(1).upper() if m else raw_name.upper()
 
             price = float(order.get("total_price", 0))
+            shipping = order.get("shipping_address") or {}
+            country_code = shipping.get("country_code", "") or ""
+            compte_tva = _country_to_tva_account(country_code, tax)
+
             orders_detail.append({
                 "date": created,
                 "order_name": order_name,
@@ -161,6 +227,8 @@ def get_tva_shopify(date_min: str, date_max: str) -> dict:
                 "ca_ht": round(price - tax, 2),
                 "ttc": round(price, 2),
                 "store": sname,
+                "country_code": country_code,
+                "compte_tva": compte_tva,
             })
 
         total_tva = round(total_tva, 2)
