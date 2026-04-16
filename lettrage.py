@@ -289,6 +289,71 @@ def _find_arrondi_line(lines_without_ref, ecart):
 # =============================================================
 # LETTRAGE EN MASSE
 # =============================================================
+def _has_unlettered_lines(account_id):
+    """Vérifie rapidement si un compte a au moins une ligne non lettrée."""
+    filter_lines = json.dumps([{"field": "ledger_account_id", "operator": "eq", "value": str(account_id)}])
+    lines = pl_get(f"{PL_BASE}/ledger_entry_lines", {"filter": filter_lines, "limit": 20})
+    if not lines:
+        return False
+    for l in lines.get("items", []):
+        if not l.get("lettered_ledger_entry_lines", {}).get("ids", []):
+            return True
+    return False
+
+
+def letter_all_411_from(min_account_id=0, limit=5000, test_mode=False):
+    """
+    Parcourt les comptes 411 créés à partir de min_account_id.
+    Ne traite que ceux qui ont des lignes non lettrées.
+    """
+    log.info(f"=== Lettrage automatique des comptes 411 (id >= {min_account_id}) {'(TEST MODE)' if test_mode else ''} ===")
+
+    filter_param = json.dumps([{"field": "number", "operator": "start_with", "value": "411"}])
+    accounts = pl_get_all("ledger_accounts", {"filter": filter_param})
+    accounts = [a for a in accounts if a.get("number") not in COMPTES_EXCLUS and a["id"] >= min_account_id]
+    accounts.sort(key=lambda a: a.get("id", 0), reverse=True)
+    accounts = accounts[:limit]
+
+    log.info(f"{len(accounts)} comptes 411 trouvés, filtrage des comptes avec lignes non lettrées...")
+
+    # Pré-filtrer : ne garder que les comptes avec au moins une ligne non lettrée
+    to_process = []
+    for i, acc in enumerate(accounts):
+        if _has_unlettered_lines(acc["id"]):
+            to_process.append(acc)
+        if (i + 1) % 100 == 0:
+            log.info(f"  ... scan {i + 1}/{len(accounts)}, {len(to_process)} à traiter")
+
+    log.info(f"{len(to_process)} comptes avec lignes non lettrées (sur {len(accounts)} scannés)")
+
+    total_lettered = 0
+    total_skipped = 0
+    total_errors = 0
+
+    for i, acc in enumerate(to_process):
+        result = letter_account(
+            account_id=acc["id"],
+            account_number=acc.get("number", ""),
+            account_label=acc.get("label", ""),
+            test_mode=test_mode,
+        )
+        total_lettered += result["lettered"]
+        total_skipped += result["skipped"]
+        total_errors += result["errors"]
+
+        if (i + 1) % 50 == 0:
+            log.info(f"  ... {i + 1}/{len(to_process)} comptes traités")
+
+    log.info(f"\n=== Résultat ===")
+    log.info(f"  Comptes scannés : {len(accounts)}")
+    log.info(f"  Comptes traités : {len(to_process)}")
+    log.info(f"  Groupes lettrés : {total_lettered}")
+    log.info(f"  Groupes skippés : {total_skipped}")
+    log.info(f"  Erreurs : {total_errors}")
+
+    return {"lettered": total_lettered, "skipped": total_skipped, "errors": total_errors}
+
+
 def letter_all_411(limit=500, test_mode=False):
     """
     Parcourt tous les comptes 411 et lettre automatiquement.
@@ -332,16 +397,17 @@ def letter_all_411(limit=500, test_mode=False):
 # =============================================================
 # MAIN
 # =============================================================
+MIN_ACCOUNT_ID = 2315484594  # À partir de 411109875 (Anais Aune)
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", action="store_true", help="Simulation sans lettrer")
-    parser.add_argument("--limit", type=int, default=500, help="Nombre max de comptes")
+    parser.add_argument("--limit", type=int, default=5000, help="Nombre max de comptes")
     parser.add_argument("--account", type=str, default=None, help="Lettrer un seul compte (numéro)")
     args = parser.parse_args()
 
     if args.account:
-        # Lettrer un seul compte
         filter_param = json.dumps([{"field": "number", "operator": "eq", "value": args.account}])
         accs = pl_get_all("ledger_accounts", {"filter": filter_param})
         if accs:
@@ -350,4 +416,4 @@ if __name__ == "__main__":
         else:
             log.error(f"Compte {args.account} non trouvé")
     else:
-        letter_all_411(limit=args.limit, test_mode=args.test)
+        letter_all_411_from(min_account_id=MIN_ACCOUNT_ID, limit=args.limit, test_mode=args.test)
