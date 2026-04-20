@@ -15,11 +15,13 @@ Body: {"unbalanced_lettering_strategy": "none", "ledger_entry_lines": [{"id": ..
 """
 
 import os, json, time, re, logging, requests
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

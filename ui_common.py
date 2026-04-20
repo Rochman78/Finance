@@ -81,7 +81,7 @@ def setup_page():
     else:
         st.sidebar.markdown('<div class="sidebar-section">Outils de pilotage</div>', unsafe_allow_html=True)
         st.sidebar.page_link("pages/7_Dashboard.py", label="📊 Dashboard")
-        st.sidebar.page_link("pages/8_Suivi_Tresorerie.py", label="💰 Suivi de la trésorerie")
+        st.sidebar.page_link("pages/8_Suivi_Tresorerie.py", label="💰 Trésorerie")
 
 
 def period_selector(key_prefix: str = "period", default_date: date = None) -> tuple[date, date]:
