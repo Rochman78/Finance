@@ -303,51 +303,86 @@ def _has_unlettered_lines(account_id):
     return False
 
 
-def letter_all_411_from(min_account_id=0, limit=5000, test_mode=False):
+def letter_all_411_from(min_account_id=0, days_back=3, test_mode=False):
     """
-    Parcourt les comptes 411 créés à partir de min_account_id.
-    Ne traite que ceux qui ont des lignes non lettrées.
+    Lettrage optimisé :
+    1. Filtre 1 : récupère les mouvements des 3 derniers jours → extrait les comptes 411 concernés
+    2. Filtre 2 : parmi ceux-là, ne garde que ceux avec des lignes non lettrées
+    3. Lettre chaque compte
     """
-    log.info(f"=== Lettrage automatique des comptes 411 (id >= {min_account_id}) {'(TEST MODE)' if test_mode else ''} ===")
+    from datetime import datetime, timedelta
 
-    filter_param = json.dumps([{"field": "number", "operator": "start_with", "value": "411"}])
-    accounts = pl_get_all("ledger_accounts", {"filter": filter_param})
-    accounts = [a for a in accounts if a.get("number") not in COMPTES_EXCLUS and a["id"] >= min_account_id]
-    accounts.sort(key=lambda a: a.get("id", 0), reverse=True)
-    accounts = accounts[:limit]
+    log.info(f"=== Lettrage automatique (optimisé J-{days_back}) {'(TEST MODE)' if test_mode else ''} ===")
 
-    log.info(f"{len(accounts)} comptes 411 trouvés, filtrage des comptes avec lignes non lettrées...")
+    # Filtre 1 : mouvements récents → comptes 411 avec activité
+    date_since = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    log.info(f"Filtre 1 : mouvements depuis {date_since}...")
 
-    # Pré-filtrer : ne garder que les comptes avec au moins une ligne non lettrée
+    filter_recent = json.dumps([
+        {"field": "date", "operator": "gteq", "value": date_since},
+    ])
+    recent_lines = pl_get_all("ledger_entry_lines", {"filter": filter_recent})
+
+    # Extraire les account_id uniques qui sont des 411 (pas transit)
+    active_account_ids = set()
+    for l in recent_lines:
+        acc = l.get("ledger_account", {})
+        acc_number = acc.get("number", "")
+        acc_id = acc.get("id")
+        if acc_id and acc_number.startswith("411") and acc_number not in COMPTES_EXCLUS and acc_id >= min_account_id:
+            active_account_ids.add(acc_id)
+
+    log.info(f"  {len(active_account_ids)} comptes 411 avec mouvements récents")
+
+    if not active_account_ids:
+        log.info("  Aucun mouvement récent → rien à lettrer")
+        return {"lettered": 0, "skipped": 0, "errors": 0}
+
+    # Filtre 2 : parmi ceux-là, lesquels ont des lignes non lettrées ?
+    log.info(f"Filtre 2 : vérification lignes non lettrées...")
     to_process = []
-    for i, acc in enumerate(accounts):
-        if _has_unlettered_lines(acc["id"]):
-            to_process.append(acc)
-        if (i + 1) % 100 == 0:
-            log.info(f"  ... scan {i + 1}/{len(accounts)}, {len(to_process)} à traiter")
+    for i, acc_id in enumerate(active_account_ids):
+        if _has_unlettered_lines(acc_id):
+            to_process.append(acc_id)
+        if (i + 1) % 50 == 0:
+            log.info(f"  ... {i + 1}/{len(active_account_ids)} vérifiés, {len(to_process)} à traiter")
 
-    log.info(f"{len(to_process)} comptes avec lignes non lettrées (sur {len(accounts)} scannés)")
+    log.info(f"  {len(to_process)} comptes à lettrer")
 
+    if not to_process:
+        log.info("  Tous les comptes actifs sont déjà lettrés")
+        return {"lettered": 0, "skipped": 0, "errors": 0}
+
+    # Résoudre les numéros et labels des comptes à traiter
+    account_info = {}
+    for l in recent_lines:
+        acc = l.get("ledger_account", {})
+        acc_id = acc.get("id")
+        if acc_id in to_process and acc_id not in account_info:
+            account_info[acc_id] = {
+                "number": acc.get("number", str(acc_id)),
+                "label": "",
+            }
+
+    # Lettrer
     total_lettered = 0
     total_skipped = 0
     total_errors = 0
 
-    for i, acc in enumerate(to_process):
+    for i, acc_id in enumerate(to_process):
+        info = account_info.get(acc_id, {"number": str(acc_id), "label": ""})
         result = letter_account(
-            account_id=acc["id"],
-            account_number=acc.get("number", ""),
-            account_label=acc.get("label", ""),
+            account_id=acc_id,
+            account_number=info["number"],
+            account_label=info["label"],
             test_mode=test_mode,
         )
         total_lettered += result["lettered"]
         total_skipped += result["skipped"]
         total_errors += result["errors"]
 
-        if (i + 1) % 50 == 0:
-            log.info(f"  ... {i + 1}/{len(to_process)} comptes traités")
-
     log.info(f"\n=== Résultat ===")
-    log.info(f"  Comptes scannés : {len(accounts)}")
+    log.info(f"  Mouvements récents : {len(active_account_ids)} comptes")
     log.info(f"  Comptes traités : {len(to_process)}")
     log.info(f"  Groupes lettrés : {total_lettered}")
     log.info(f"  Groupes skippés : {total_skipped}")
