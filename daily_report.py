@@ -444,16 +444,16 @@ def _create_ads_report(token, profile_id, ad_product, report_type_id, date_str):
             "Authorization": f"Bearer {token}",
             "Amazon-Advertising-API-ClientId": AMAZON_ADS_CLIENT_ID,
             "Amazon-Advertising-API-Scope": profile_id,
-            "Content-Type": "application/vnd.createasyncreportrequest.v3+json",
-            "Accept": "application/vnd.createasyncreportrequest.v3+json",
+            "Content-Type": "application/json",
         },
         json={
+            "name": f"{ad_product} spend {date_str}",
             "startDate": date_str,
             "endDate":   date_str,
             "configuration": {
                 "adProduct":    ad_product,
                 "groupBy":      ["campaign"],
-                "columns":      ["cost"],
+                "columns":      ["spend"],
                 "reportTypeId": report_type_id,
                 "timeUnit":     "SUMMARY",
                 "format":       "GZIP_JSON",
@@ -493,7 +493,7 @@ def _poll_and_download_report(token, profile_id, report_id):
             if dl.status_code != 200:
                 return 0.0
             rows = json_mod.loads(gzip.decompress(dl.content))
-            return sum(float(r.get("cost", 0) or 0) for r in rows)
+            return sum(float(r.get("spend", 0) or r.get("cost", 0) or 0) for r in rows)
         elif status == "FAILED":
             return 0.0
     return 0.0
