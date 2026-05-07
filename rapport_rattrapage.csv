@@ -1,0 +1,465 @@
+order,status,date,client,type,country,vat_rate,financial_status,ttc_shopify,ttc_calculated,ecart,nb_items,shipping,discount,discount_amount,store
+LFC31653,OK,2026-04-20,Fabienne Gérise,individual,FR,FR_200,paid,132.3,132.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.69,LFC
+LFC31654,OK,2026-04-20,Patricia CARRON,company,FR,FR_200,paid,420.89,420.89,0.0,3,Colissimo (48 à 72 heures),EXCLU15,74.27,LFC
+LFC31655,OK,2026-04-20,Eric DESTAILLATS,company,FR,FR_200,paid,159.3,159.3,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,17.69,LFC
+LFC31656,ECART,2026-04-20,Patricia CARRON,company,FR,FR_200,paid,5.18,6.9,-1.72,1,Livraison Offerte,,0,LFC
+LFC31657,OK,2026-04-20,Jean-François Druon,individual,FR,FR_200,paid,159.21,159.21,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,17.68,LFC
+LFC31658,OK,2026-04-20,Cédric Pouget,individual,FR,FR_200,paid,16.92,16.92,0.0,1,Colissimo (48 à 72 heures),EXCLU15,2.98,LFC
+LFC31659,OK,2026-04-20,Sonia Pierron,individual,FR,FR_200,paid,206.98,206.98,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31660,OK,2026-04-20,Stephanie Di placido,individual,FR,FR_200,paid,213.3,213.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,23.69,LFC
+LFC31661,OK,2026-04-20,Stéphane Goaec,individual,FR,FR_200,paid,51.0,51.0,0.0,1,Colissimo (48 à 72 heures),ETE15,8.99,LFC
+LFC31662,OK,2026-04-20,Guillaume Bertrand,individual,FR,FR_200,paid,152.82,152.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,16.98,LFC
+LFC31663,OK,2026-04-20,Jean-Marc Grémy,individual,FR,FR_200,paid,197.88,197.88,0.0,3,Colissimo (48 à 72 heures),ETE15,34.91,LFC
+LFC31664,OK,2026-04-20,Bertrand Durand-Gasselin,individual,FR,FR_200,paid,177.0,177.0,0.0,1,Colissimo (48 à 72 heures),EXCLU25,58.99,LFC
+LFC31665,OK,2026-04-20,OLIVIER TORNIER,individual,FR,FR_200,paid,53.55,53.55,0.0,1,Colissimo (48 à 72 heures),ETE15,9.44,LFC
+LFC31666,OK,2026-04-20,Jean Claude BONNIN,individual,FR,FR_200,paid,79.89,79.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31667,OK,2026-04-20,Manuela Bisconti,company,IT,IT_220,paid,675.81,675.81,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,73.98,LFC
+LFC31668,OK,2026-04-20,Dimitri Guinee,individual,FR,FR_200,paid,77.35,77.35,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,13.64,LFC
+LFC31669,OK,2026-04-20,Judicael THERAULT,individual,FR,FR_200,paid,89.91,89.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,9.99,LFC
+LFC31670,OK,2026-04-20,jerome corbineau paysage,individual,FR,FR_200,paid,195.99,195.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31671,OK,2026-04-20,CASAMAR srl Gabriele,company,IT,IT_220,paid,1074.96,1074.96,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31672,OK,2026-04-20,Christophe MEGARD,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,17.09,LFC
+LFC31673,OK,2026-04-21,Patricia Goubert,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31674,OK,2026-04-21,Magali Hameau,company,FR,FR_200,paid,54.0,54.0,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,5.99,LFC
+LFC31675,OK,2026-04-21,Frédéric Gleyze,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31676,OK,2026-04-21,Theo Davril,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31677,OK,2026-04-21,Paola Chaparro,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31678,OK,2026-04-21,Jonathan Cavalli,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,11.39,LFC
+LFC31679,OK,2026-04-21,PHILIPPE MALLINJOUD,company,FR,FR_200,paid,146.29,146.29,0.0,2,Colissimo (48 à 72 heures),MERCI30,62.69,LFC
+LFC31680,OK,2026-04-21,Gregory Charriere,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31681,OK,2026-04-21,Elodie Combet,individual,FR,FR_200,paid,115.8,115.8,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31682,OK,2026-04-21,Carole CROIX,individual,FR,FR_200,paid,51.0,51.0,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,8.99,LFC
+LFC31683,OK,2026-04-21,JEAN CHAUVEAU,individual,FR,FR_200,paid,246.99,246.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31684,OK,2026-04-21,Aurélie MARTINEZ,individual,FR,FR_200,paid,141.3,141.3,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,15.69,LFC
+LFC31685,OK,2026-04-21,Jerome Bourdel,individual,FR,FR_200,paid,69.89,69.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31686,OK,2026-04-21,Edwige Albert,individual,FR,FR_200,paid,129.97,129.97,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),ETE15,22.93,LFC
+LFC31687,OK,2026-04-21,Cristofini Marielle,individual,FR,FR_200,paid,98.82,98.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,10.98,LFC
+LFC31688,OK,2026-04-21,Leelou Gutierrez,individual,FR,FR_200,paid,60.13,60.13,0.0,1,Colissimo (48 à 72 heures),MERCI30,25.77,LFC
+LFC31689,OK,2026-04-21,Leelou Gutierrez,individual,FR,FR_200,paid,20.93,20.93,0.0,1,Colissimo (48 à 72 heures),MERCI30,8.97,LFC
+LFC31690,OK,2026-04-21,Baptiste Despins,individual,FR,FR_200,paid,79.2,79.2,0.0,1,Colissimo (48 à 72 heures),MERCI20,19.79,LFC
+LFC31691,OK,2026-04-21,Pierre Bourdier,company,FR,FR_200,paid,246.99,246.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31692,OK,2026-04-21,philippe Sarrabay,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,11.39,LFC
+LFC31693,OK,2026-04-21,JULIETTE RAUYER,individual,FR,FR_200,paid,194.31,194.31,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,21.58,LFC
+LFC31694,OK,2026-04-21,Sylvie JULLIEN,individual,FR,FR_200,paid,133.89,133.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31695,OK,2026-04-21,Fleur Marchal,individual,FR,FR_200,paid,822.59,822.59,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,91.39,LFC
+LFC31696,OK,2026-04-21,Evelyne Le Quenven,individual,FR,FR_200,paid,133.45,133.45,0.0,1,Colissimo (48 à 72 heures),ETE15,23.54,LFC
+LFC31697,OK,2026-04-21,cyril castro,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Colissimo (48 à 72 heures),ETE15,17.09,LFC
+LFC31698,OK,2026-04-21,MATHIEU BERNARDIN,company,FR,FR_200,paid,216.54,216.54,0.0,5,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,24.05,LFC
+LFC31699,OK,2026-04-21,HAYETTE AIDEL,individual,FR,FR_200,paid,133.45,133.45,0.0,1,Colissimo (48 à 72 heures),ETE15,23.54,LFC
+LFC31700,OK,2026-04-21,Marion TRUEL,individual,FR,FR_200,paid,527.4,527.4,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,58.59,LFC
+LFC31701,OK,2026-04-21,CLAIRE ESCAMES,individual,FR,FR_200,paid,344.99,344.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31702,OK,2026-04-21,Jeremy Kwiatkowski,individual,FR,FR_200,paid,599.9,599.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31703,OK,2026-04-21,myriam ESTIENNE,individual,FR,FR_200,paid,146.99,146.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31704,OK,2026-04-21,Yves Dupont,individual,FR,FR_200,paid,54.0,54.0,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),REVIENS10,5.99,LFC
+LFC31705,OK,2026-04-21,JEAN FRANCOIS MONFORT,company,FR,FR_200,paid,2261.93,2261.93,0.0,5,Colissimo (48 à 72 heures),,0,LFC
+LFC31706,OK,2026-04-21,Annick Pichard,individual,FR,FR_200,paid,120.51,120.51,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,13.38,LFC
+LFC31707,OK,2026-04-21,Jean-Jacques ICHAI,company,FR,FR_200,paid,489.99,489.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31708,OK,2026-04-21,Johan Fevre,individual,FR,FR_200,paid,269.91,269.91,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,29.99,LFC
+LFC31709,OK,2026-04-21,Cyrille Raffy,individual,FR,FR_200,paid,8.91,8.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,0.99,LFC
+LFC31710,OK,2026-04-21,Jérémy Coutens,individual,FR,FR_200,paid,230.31,230.31,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,25.58,LFC
+LFC31711,OK,2026-04-21,Adeline Hardy,company,FR,FR_200,paid,462.05,462.05,0.0,3,Colissimo (48 à 72 heures),EXCLU15,81.53,LFC
+LFC31712,OK,2026-04-21,DAVID RIGAUD,individual,FR,FR_200,paid,51.0,51.0,0.0,1,Colissimo (48 à 72 heures),EXCLU15,8.99,LFC
+LFC31713,OK,2026-04-21,frederic DECROIX,company,FR,FR_200,paid,119.98,119.98,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31714,OK,2026-04-21,Claude Delorme,individual,FR,FR_200,paid,72.0,72.0,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,7.99,LFC
+LFC31715,OK,2026-04-21,VON Olivier,individual,FR,FR_200,paid,224.91,224.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,24.99,LFC
+LFC31716,OK,2026-04-21,Adeline Pierrot,individual,FR,FR_200,paid,253.53,253.53,0.0,4,Colissimo (48 à 72 heures),BIENVENUE10,28.16,LFC
+LFC31717,OK,2026-04-21,damien zanaroli,individual,FR,FR_200,paid,134.88,134.88,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31718,OK,2026-04-21,Axel Adabachi,individual,FR,FR_200,paid,80.91,80.91,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,8.98,LFC
+LFC31719,OK,2026-04-21,Olivier LAVAL,company,FR,FR_200,paid,635.37,635.37,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,70.59,LFC
+LFC31720,OK,2026-04-21,Bernard Nakache,individual,FR,FR_200,paid,152.91,152.91,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,16.99,LFC
+LFC31721,OK,2026-04-21,Jean-Pierre Simon,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31722,OK,2026-04-21,Gilles Roy,individual,FR,FR_200,paid,1018.47,1018.47,0.0,6,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,113.16,LFC
+LFC31723,OK,2026-04-21,sylvie guiraud,individual,FR,FR_200,paid,80.1,80.1,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,8.89,LFC
+LFC31724,OK,2026-04-21,Catherine guigue,individual,FR,FR_200,paid,99.89,99.89,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31725,OK,2026-04-21,DEROUBAIX Thierry,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,17.09,LFC
+LFC31726,OK,2026-04-21,Julie Demars,individual,FR,FR_200,paid,124.95,124.95,0.0,1,Colissimo (48 à 72 heures),EXCLU15,22.04,LFC
+LFC31727,OK,2026-04-21,Jean-Marc Reynaud,individual,FR,FR_200,paid,107.99,107.99,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.99,LFC
+LFC31728,OK,2026-04-21,Elodie Courvoisier,company,FR,FR_200,paid,106.2,106.2,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.79,LFC
+LFC31729,OK,2026-04-21,christian COLIN,individual,FR,FR_200,paid,175.23,175.23,0.0,4,Colissimo (48 à 72 heures),BIENVENUE10,19.46,LFC
+LFC31730,OK,2026-04-21,Jean Sébastien Fraunié,company,FR,FR_200,paid,783.98,783.98,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31731,OK,2026-04-21,Catherine Balois,company,FR,FR_200,paid,39.99,39.99,0.0,1,Colissimo (48 à 72 heures),LX-XURX9S,10.0,LFC
+LFC31732,OK,2026-04-21,CHRISTELLE DE MELA,company,FR,FR_200,paid,169.97,169.97,0.0,1,Colissimo (48 à 72 heures),ETE15,29.99,LFC
+LFC31733,OK,2026-04-21,JEROME ANDRADE,individual,FR,FR_200,paid,152.72,152.72,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU20,38.17,LFC
+LFC31734,OK,2026-04-21,Rémi THELLIER,individual,FR,FR_200,paid,31.5,31.5,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,3.49,LFC
+LFC31735,OK,2026-04-21,Emilie Rousseau,individual,FR,FR_200,paid,129.51,129.51,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,14.38,LFC
+LFC31736,OK,2026-04-21,Cyril Rihet,individual,FR,FR_200,paid,102.79,102.79,0.0,3,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31737,OK,2026-04-21,Laurent Gueppe,individual,FR,FR_200,paid,79.99,79.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31738,OK,2026-04-21,mehdi BOUZIDIA,company,FR,FR_200,paid,532.78,532.78,0.0,4,Colissimo (48 à 72 heures),,0,LFC
+LFC31739,OK,2026-04-21,Michel Zenou,company,FR,FR_200,paid,49.99,49.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31740,OK,2026-04-21,stephane THIERRY,individual,FR,FR_200,paid,166.6,166.6,0.0,1,Colissimo (48 à 72 heures),EXCLU15,29.39,LFC
+LFC31741,OK,2026-04-21,Emilie Charbonnel,individual,FR,FR_200,paid,132.3,132.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.69,LFC
+LFC31742,OK,2026-04-21,brigitte couchouron,individual,FR,FR_200,paid,159.3,159.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,17.69,LFC
+LFC31743,OK,2026-04-21,Gaëtan CONEAU,individual,FR,FR_200,paid,177.75,177.75,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU25,59.24,LFC
+LFC31744,OK,2026-04-21,Sophie Skapski,individual,FR,FR_200,paid,51.0,51.0,0.0,1,Colissimo (48 à 72 heures),EXCLU15,8.99,LFC
+LFC31745,OK,2026-04-21,Gilles Nicolas,individual,FR,FR_200,paid,124.89,124.89,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31746,OK,2026-04-21,Virginie Laurent,individual,FR,FR_200,paid,293.25,293.25,0.0,1,Colissimo (48 à 72 heures),EXCLU15,51.74,LFC
+LFC31747,OK,2026-04-21,Tanase Cartuna,individual,RO,RO_190,paid,229.67,229.67,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,24.38,LFC
+LFC31748,OK,2026-04-21,Geraldine Caucheteux,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31749,OK,2026-04-21,Servane TAROT,individual,FR,FR_200,paid,130.79,130.79,0.0,3,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31750,OK,2026-04-21,Desmet Florian,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31751,OK,2026-04-21,Melvin Hurtaud,individual,FR,FR_200,paid,336.89,336.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31752,OK,2026-04-21,Arnaud de Villaret,individual,FR,FR_200,paid,89.1,89.1,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,9.89,LFC
+LFC31753,OK,2026-04-21,Florence Wimez,individual,FR,FR_200,paid,235.2,235.2,0.0,1,Colissimo (48 à 72 heures),EXCLU20,58.79,LFC
+LFC31754,OK,2026-04-22,Didier LISSART,individual,FR,FR_200,paid,146.99,146.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31755,OK,2026-04-22,Mathilde Bourdieu,individual,FR,FR_200,paid,264.6,264.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,29.39,LFC
+LFC31756,OK,2026-04-22,Félix Vion,individual,FR,FR_200,paid,217.8,217.8,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,24.19,LFC
+LFC31757,OK,2026-04-22,Guillaume VIALON,individual,FR,FR_200,paid,264.6,264.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,29.39,LFC
+LFC31758,OK,2026-04-22,ROMAIN Bas,company,FR,FR_200,paid,1379.95,1379.95,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31759,OK,2026-04-22,Yann Pericard,individual,FR,FR_200,paid,235.79,235.79,0.0,3,Colissimo (48 à 72 heures),,0,LFC
+LFC31760,OK,2026-04-22,Frederic Chenu,individual,FR,FR_200,paid,62.99,62.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31761,OK,2026-04-22,Foures Brigitte,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31762,OK,2026-04-22,Alexandra Héroult,individual,FR,FR_200,paid,89.25,89.25,0.0,1,Colissimo (48 à 72 heures),EXCLU15,15.74,LFC
+LFC31763,OK,2026-04-22,Jean-Louis TARPIN,individual,FR,FR_200,paid,166.6,166.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),ETE15,29.39,LFC
+LFC31764,OK,2026-04-22,Alexia GAC,individual,FR,FR_200,paid,282.59,282.59,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,31.39,LFC
+LFC31765,OK,2026-04-22,Charlotte CALIBRE,individual,FR,FR_200,paid,230.34,230.34,0.0,2,Colissimo (48 à 72 heures),ETE15,40.64,LFC
+LFC31766,OK,2026-04-22,Patrick Mounier,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,11.39,LFC
+LFC31767,OK,2026-04-22,Patricia Barraco,individual,FR,FR_200,paid,146.99,146.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31768,OK,2026-04-22,christine porthier,individual,FR,FR_200,paid,79.99,79.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31769,OK,2026-04-22,Christine MENET,individual,FR,FR_200,paid,134.09,134.09,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,14.89,LFC
+LFC31770,ECART,2026-04-22,christine porthier,individual,FR,FR_200,paid,22.43,29.9,-7.47,1,Livraison Offerte,,0,LFC
+LFC31771,OK,2026-04-22,Michel GAILLARD,individual,FR,FR_200,paid,341.82,341.82,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,37.98,LFC
+LFC31772,OK,2026-04-22,stéphanie ABRAMOVICZ,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Colissimo (48 à 72 heures),ETE15,17.09,LFC
+LFC31773,OK,2026-04-22,Michelle DELAYE,individual,FR,FR_200,paid,205.99,205.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31774,OK,2026-04-22,SYLVAIN NOUIS,individual,FR,FR_200,paid,160.19,160.19,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,17.79,LFC
+LFC31775,OK,2026-04-22,Marie Sarret,individual,FR,FR_200,paid,120.89,120.89,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31776,OK,2026-04-22,CHRISTIAN MURAILLE,individual,FR,FR_200,paid,80.1,80.1,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,8.89,LFC
+LFC31777,OK,2026-04-22,Gaétane MARTIN,company,FR,FR_200,paid,176.4,176.4,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,19.59,LFC
+LFC31778,OK,2026-04-22,Vincent Giron,individual,FR,FR_200,paid,9.9,9.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31779,OK,2026-04-22,Amandine Ducroix,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31780,OK,2026-04-22,magali mounier,company,FR,FR_200,paid,359.7,359.7,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31781,OK,2026-04-22,SOPHIE Carlier,individual,FR,FR_200,paid,139.6,139.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),CARLIERS,17.39,LFC
+LFC31782,OK,2026-04-22,Anne SALBAYRE,individual,FR,FR_200,paid,391.98,391.98,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31783,OK,2026-04-22,Sébastien Menne,company,FR,FR_200,paid,149.97,149.97,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31784,OK,2026-04-22,Domnique CRUCIANI,company,FR,FR_200,paid,469.99,469.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31785,OK,2026-04-22,Basile Lecoanet,individual,FR,FR_200,paid,88.99,88.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31786,OK,2026-04-22,Fanny Portal,individual,FR,FR_200,paid,151.92,151.92,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,16.87,LFC
+LFC31787,OK,2026-04-22,Jean-Michel Lacazette,company,FR,FR_200,paid,549.99,549.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31788,OK,2026-04-22,Patrick Ciai,individual,FR,FR_200,paid,185.13,185.13,0.0,3,Colissimo (48 à 72 heures),ETE15,32.66,LFC
+LFC31789,OK,2026-04-22,PAULINE MORAND DELMASURE,individual,FR,FR_200,paid,68.0,68.0,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),ETE15,11.99,LFC
+LFC31790,OK,2026-04-22,OLIVIER TISSOT,individual,FR,FR_200,paid,9.9,9.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31791,OK,2026-04-22,marie therese saussereau,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31792,OK,2026-04-22,RAISON ANNA,individual,FR,FR_200,paid,93.41,93.41,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,10.37,LFC
+LFC31793,OK,2026-04-22,eve GUEROULT,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,11.39,LFC
+LFC31794,OK,2026-04-22,Jean marie ARLABOSSE,individual,FR,FR_200,paid,89.1,89.1,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,9.89,LFC
+LFC31795,OK,2026-04-22,FRANCOIS GENDRON,individual,FR,FR_200,paid,176.99,176.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31799,OK,2026-04-22,XAVIER BERTOLINO,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31800,OK,2026-04-22,Cecile BONNET,individual,FR,FR_200,paid,244.71,244.71,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,27.18,LFC
+LFC31806,OK,2026-04-22,Magali Arnaud,individual,FR,FR_200,paid,31.23,31.23,0.0,2,Colissimo (48 à 72 heures),FIXATIONS10,3.47,LFC
+LFC31807,OK,2026-04-22,ETIENNE KERN,individual,FR,FR_200,paid,79.99,79.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31810,OK,2026-04-22,Aurélie ARMAND ARTERO,individual,FR,FR_200,paid,74.61,74.61,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,8.28,LFC
+LFC31811,OK,2026-04-22,Chakib Kerrour,individual,FR,FR_200,paid,127.79,127.79,0.0,3,Colissimo (48 à 72 heures),,0,LFC
+LFC31812,OK,2026-04-22,Caroline Delhaye,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31813,OK,2026-04-22,Mathilde Dhondt,individual,FR,FR_200,paid,547.02,547.02,0.0,7,Colissimo (48 à 72 heures),ETE15,96.53,LFC
+LFC31814,OK,2026-04-22,David Laboiry,individual,FR,FR_200,paid,240.21,240.21,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,26.68,LFC
+LFC31815,OK,2026-04-22,ERIC GUILLET,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31816,OK,2026-04-22,Célia GAMET-VASSELIN,individual,FR,FR_200,paid,489.98,489.98,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31817,OK,2026-04-22,Yves Hudebine,individual,FR,FR_200,paid,93.73,93.73,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),MERCI30,40.16,LFC
+LFC31818,OK,2026-04-22,Nicole BENAYOUN_CANTOUNAT,individual,FR,FR_200,paid,16.92,16.92,0.0,1,Colissimo (48 à 72 heures),ETE15,2.98,LFC
+LFC31819,OK,2026-04-22,Marine Kergourlay,company,FR,FR_200,paid,240.3,240.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,26.69,LFC
+LFC31820,OK,2026-04-22,Maxence Brin,company,FR,FR_200,paid,370.61,370.61,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,41.17,LFC
+LFC31821,OK,2026-04-22,laurent CRISCUOLO,individual,FR,FR_200,paid,156.99,156.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31822,OK,2026-04-22,Nathalie Ruel,individual,FR,FR_200,paid,194.31,194.31,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,21.58,LFC
+LFC31823,OK,2026-04-22,Claude Nivon,individual,FR,FR_200,paid,423.0,423.0,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,46.99,LFC
+LFC31824,OK,2026-04-22,Adrien Irigoyen,individual,FR,FR_200,paid,185.25,185.25,0.0,1,Colissimo (48 à 72 heures),EXCLU25,61.74,LFC
+LFC31825,OK,2026-04-22,Fabrice Muraccioli,individual,FR,FR_200,paid,276.99,276.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31826,OK,2026-04-22,Véronique courant,individual,FR,FR_200,paid,384.94,384.94,0.0,5,Colissimo (48 à 72 heures),ETE15,67.92,LFC
+LFC31827,OK,2026-04-22,Sandrine Bonnaud,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31828,OK,2026-04-22,PIERRE OLIVIER MARTINEZ,individual,FR,FR_200,paid,636.2,636.2,0.0,6,Colissimo (48 à 72 heures),ETE15,112.26,LFC
+LFC31829,OK,2026-04-22,Gilles SOULIS,individual,FR,FR_200,paid,249.9,249.9,0.0,1,Colissimo (48 à 72 heures),ETE15,44.09,LFC
+LFC31830,OK,2026-04-22,stephanie garbay,individual,FR,FR_200,paid,138.42,138.42,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,15.37,LFC
+LFC31831,OK,2026-04-22,Christelle GIACOMINI,individual,FR,FR_200,paid,49.99,49.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31832,OK,2026-04-23,Denis Bedu,company,FR,FR_200,paid,400.33,400.33,0.0,1,Colissimo (48 à 72 heures),BIENVENUE15,70.64,LFC
+LFC31833,OK,2026-04-23,patrick montaron,individual,FR,FR_200,paid,98.43,98.43,0.0,3,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,17.36,LFC
+LFC31834,OK,2026-04-23,Corinne Clutier,individual,FR,FR_200,paid,166.89,166.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31835,ECART,2026-04-23,Christian Mours,company,FR,FR_200,paid,146.99,122.49,24.5,1,Livraison à domicile,,0,LFC
+LFC31836,OK,2026-04-23,eric burdet,individual,FR,FR_200,paid,129.97,129.97,0.0,1,Colissimo (48 à 72 heures),EXCLU15,22.93,LFC
+LFC31837,OK,2026-04-23,Claudine Schneider,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31838,OK,2026-04-23,Larousse Stephane,company,FR,FR_200,paid,938.49,938.49,0.0,4,Colissimo (48 à 72 heures),BIENVENUE10,104.27,LFC
+LFC31839,OK,2026-04-23,WAROT SYLVIE,individual,FR,FR_200,paid,17.91,17.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,1.99,LFC
+LFC31840,OK,2026-04-23,Anne sophie Houille,individual,FR,FR_200,paid,201.45,201.45,0.0,1,Colissimo (48 à 72 heures),ETE15,35.54,LFC
+LFC31841,OK,2026-04-23,Joanna Degaret,individual,FR,FR_200,paid,120.51,120.51,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,13.38,LFC
+LFC31842,OK,2026-04-23,Corinne Cabresin,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31843,OK,2026-04-23,Glynis Griffiths,individual,FR,FR_200,paid,132.3,132.3,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,14.69,LFC
+LFC31844,OK,2026-04-23,Philippe Guillot,individual,FR,FR_200,paid,236.99,236.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31845,OK,2026-04-23,Clément GARIN,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Colissimo (48 à 72 heures),ETE15,17.09,LFC
+LFC31846,OK,2026-04-23,Delphine Castex,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31847,OK,2026-04-23,JEAN PHILIPPE BEDET,individual,FR,FR_200,paid,19.9,19.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31848,OK,2026-04-23,Michel Martin,company,FR,FR_200,paid,17.91,17.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,1.99,LFC
+LFC31849,OK,2026-04-23,sabine lemaire,individual,FR,FR_200,paid,209.95,209.95,0.0,1,Colissimo (48 à 72 heures),ETE15,37.04,LFC
+LFC31850,OK,2026-04-23,Jean-Marc BLANCHIN,company,FR,FR_200,paid,215.89,215.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31851,OK,2026-04-23,Pierre-Dominque Menneron,individual,FR,FR_200,paid,17.91,17.91,0.0,1,Colissimo (48 à 72 heures),FIXATIONS10,1.99,LFC
+LFC31852,OK,2026-04-23,GERES BOREALE GAND,individual,FR,FR_200,paid,1018.81,1018.81,0.0,4,Colissimo (48 à 72 heures),,0,LFC
+LFC31853,OK,2026-04-23,Rodolphe MANUEL,company,FR,FR_200,paid,266.89,266.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31854,OK,2026-04-23,marie christine gauthier,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31855,OK,2026-04-23,Francois Alajouanine,individual,FR,FR_200,paid,65.99,65.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31856,OK,2026-04-23,Marie-Claire LAMBLIN,individual,FR,FR_200,paid,32.99,32.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31857,OK,2026-04-23,HUBERT LACOUR,company,FR,FR_200,paid,150.45,150.45,0.0,1,Colissimo (48 à 72 heures),ETE15,26.54,LFC
+LFC31858,OK,2026-04-23,Beatrice DELFINI,individual,FR,FR_200,paid,49.99,49.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31859,OK,2026-04-23,Jeremy Fustec,individual,FR,FR_200,paid,88.99,88.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31860,OK,2026-04-23,yves Boukobza,individual,GR,GR_240,pending,144.29,144.29,0.0,1,Colissimo (48 à 72 heures),EXCLU15,23.69,LFC
+LFC31861,OK,2026-04-23,Hugo Petit,company,FR,FR_200,paid,575.09,575.09,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,63.89,LFC
+LFC31862,OK,2026-04-23,Fabrice Coutant,company,FR,FR_200,paid,1184.95,1184.95,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31863,OK,2026-04-23,Magali Brisseault,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31864,OK,2026-04-23,Anne-Claire DUDIT,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31865,OK,2026-04-23,Emilie DUMEIGE,individual,FR,FR_200,paid,333.19,333.19,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),ETE15,58.79,LFC
+LFC31866,OK,2026-04-23,Celine PONCET,individual,FR,FR_200,paid,85.9,85.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31867,OK,2026-04-23,jean francois verlinde,individual,FR,FR_200,paid,201.45,201.45,0.0,1,Colissimo (48 à 72 heures),ETE15,35.54,LFC
+LFC31868,OK,2026-04-23,Samuel Rol ei,individual,FR,FR_200,paid,72.0,72.0,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,7.99,LFC
+LFC31869,OK,2026-04-23,Ellen Buschfeld,individual,FR,FR_200,paid,195.99,195.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31870,OK,2026-04-23,GINO CAFAGNA,company,FR,FR_200,paid,123.9,123.9,0.0,1,Colissimo (48 à 72 heures),MERCI30,53.09,LFC
+LFC31871,OK,2026-04-23,MORIN OLIVIER,individual,FR,FR_200,paid,150.21,150.21,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,16.68,LFC
+LFC31872,OK,2026-04-23,Yohann ROBIN,individual,FR,FR_200,paid,326.79,326.79,0.0,3,Colissimo (48 à 72 heures),,0,LFC
+LFC31873,OK,2026-04-23,Benjamin Thomassin,individual,FR,FR_200,paid,146.99,146.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31874,OK,2026-04-23,Léa LOUVIOT,company,FR,FR_200,paid,354.99,354.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31875,OK,2026-04-23,Bernard Perronnet,individual,FR,FR_200,paid,71.82,71.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,7.98,LFC
+LFC31876,OK,2026-04-23,David Amouyal,individual,FR,FR_200,paid,94.99,94.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31877,OK,2026-04-23,Nathalie MERLET -MAHIEUX,company,FR,FR_200,paid,193.79,193.79,0.0,3,Colissimo (48 à 72 heures),,0,LFC
+LFC31878,OK,2026-04-23,vincent bloch,company,FR,FR_200,paid,432.89,432.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31879,OK,2026-04-23,pascal castellanos,individual,FR,FR_200,paid,54.0,54.0,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,5.99,LFC
+LFC31880,OK,2026-04-23,Philippe Delord,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31881,OK,2026-04-23,Romain Lestringant,individual,FR,FR_200,paid,266.97,266.97,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31882,OK,2026-04-23,GOUTIRES ALEXANDRA,individual,FR,FR_200,paid,56.7,56.7,0.0,3,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31883,OK,2026-04-23,Sabrina BONNIN,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31884,OK,2026-04-23,Patrice LAGOFUN,individual,FR,FR_200,paid,209.79,209.79,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31885,OK,2026-04-23,Vanessa Giffaud,company,FR,FR_200,paid,80.1,80.1,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,8.89,LFC
+LFC31886,OK,2026-04-23,Sabrina Habay,individual,FR,FR_200,paid,160.19,160.19,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,17.79,LFC
+LFC31887,OK,2026-04-23,Nicolas Rico,individual,FR,FR_200,paid,328.41,328.41,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,36.48,LFC
+LFC31888,OK,2026-04-23,Johan Christ,individual,FR,FR_200,paid,69.89,69.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31889,OK,2026-04-23,Amandine Corbet,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Colissimo (48 à 72 heures),ETE15,17.09,LFC
+LFC31890,OK,2026-04-23,Maria Casado,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31891,OK,2026-04-23,Mathieu Putin,individual,FR,FR_200,paid,189.72,189.72,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,21.07,LFC
+LFC31892,OK,2026-04-23,Hubert Tresarrieu,individual,FR,FR_200,paid,625.77,625.77,0.0,4,Colissimo (48 à 72 heures),,0,LFC
+LFC31893,OK,2026-04-23,Cedric PIN,individual,FR,FR_200,paid,319.97,319.97,0.0,3,Colissimo (48 à 72 heures),,0,LFC
+LFC31894,OK,2026-04-23,Laurent Fontes,individual,FR,FR_200,paid,106.2,106.2,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,11.79,LFC
+LFC31895,OK,2026-04-23,David Adamietz,individual,FR,FR_200,paid,338.13,338.13,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),ETE15,59.67,LFC
+LFC31896,OK,2026-04-23,Alexandre Azria,individual,FR,FR_200,paid,554.31,554.31,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,61.58,LFC
+LFC31897,OK,2026-04-23,Dieter Gerhards,individual,FR,FR_200,paid,128.98,128.98,0.0,1,Chronopost Express (24 heures si la commande est passée avant 12h),,0,LFC
+LFC31898,OK,2026-04-23,catherine larroque,individual,FR,FR_200,paid,117.99,117.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31899,OK,2026-04-23,Dominique Carrasco,individual,FR,FR_200,paid,92.56,92.56,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,16.33,LFC
+LFC31900,OK,2026-04-23,Celine Rivieyran,individual,FR,FR_200,paid,160.93,160.93,0.0,1,Colissimo (48 à 72 heures),MERCI30,68.97,LFC
+LFC31901,OK,2026-04-23,RAISON ANNA,individual,FR,FR_200,paid,19.9,19.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31902,OK,2026-04-23,David Laviolette,individual,FR,FR_200,paid,176.99,176.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31903,OK,2026-04-23,Mathis Hirel,individual,FR,FR_200,paid,88.99,88.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31904,OK,2026-04-23,Estelle Ross,individual,FR,FR_200,paid,88.99,88.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31905,OK,2026-04-23,Valérie Tribillac,individual,FR,FR_200,paid,213.3,213.3,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,23.69,LFC
+LFC31906,OK,2026-04-23,Elise Harel,individual,FR,FR_200,paid,185.12,185.12,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),ETE15,32.66,LFC
+LFC31907,OK,2026-04-23,Romain THOUE,individual,FR,FR_200,paid,172.9,172.9,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),MERCI30,74.09,LFC
+LFC31908,OK,2026-04-23,Julie SETTE,individual,FR,FR_200,paid,74.61,74.61,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,8.28,LFC
+LFC31909,OK,2026-04-23,roger marro,individual,FR,FR_200,paid,69.89,69.89,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31910,OK,2026-04-23,David MARGELY,individual,FR,FR_200,paid,613.75,613.75,0.0,5,Colissimo (48 à 72 heures),,0,LFC
+LFC31911,OK,2026-04-23,Celine Hemon,individual,FR,FR_200,paid,19.8,19.8,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31912,OK,2026-04-23,Véronique sylvie BONNET,individual,FR,FR_200,paid,26.91,26.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,2.99,LFC
+LFC31913,OK,2026-04-23,Chantal Moulin,individual,FR,FR_200,paid,89.91,89.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,9.99,LFC
+LFC31914,OK,2026-04-24,Melodie Gauthey,individual,FR,FR_200,paid,100.3,100.3,0.0,1,Colissimo (48 à 72 heures),ETE15,17.69,LFC
+LFC31915,OK,2026-04-24,Stéphane Barbedette,individual,FR,FR_200,paid,132.3,132.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.69,LFC
+LFC31916,OK,2026-04-24,Fabienne Langlais,individual,FR,FR_200,paid,141.3,141.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,15.69,LFC
+LFC31917,OK,2026-04-24,didier mari,individual,FR,FR_200,paid,49.99,49.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31918,OK,2026-04-24,Malek BENSAI MUNOZ,individual,FR,FR_200,paid,176.4,176.4,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,19.59,LFC
+LFC31919,OK,2026-04-24,YVES CLEMARON,individual,FR,FR_200,paid,176.4,176.4,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,19.59,LFC
+LFC31920,OK,2026-04-24,monique de Courcel,individual,FR,FR_200,paid,69.89,69.89,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31921,OK,2026-04-24,Claude BODINEAU,individual,FR,FR_200,paid,186.89,186.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31922,OK,2026-04-24,Jean-Jacques Mirgon,individual,FR,FR_200,paid,272.51,272.51,0.0,3,Colissimo (48 à 72 heures),EXCLU15,48.08,LFC
+LFC31923,OK,2026-04-24,Patrice Etienne,individual,FR,FR_200,paid,72.0,72.0,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,7.99,LFC
+LFC31924,OK,2026-04-24,ALAIN FAURE,individual,FR,FR_200,paid,101.99,101.99,0.0,1,Colissimo (48 à 72 heures),EXCLU15,17.99,LFC
+LFC31925,OK,2026-04-24,gregory Tisseyre,individual,FR,FR_200,paid,276.99,276.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31926,OK,2026-04-24,BENOIT GLAYZES,company,FR,FR_200,paid,183.89,183.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31927,OK,2026-04-24,Uguette Sas,company,FR,FR_200,paid,1226.83,1226.83,0.0,5,Colissimo (48 à 72 heures),BIENVENUE10,136.31,LFC
+LFC31928,OK,2026-04-24,Frederic Pibarot,company,FR,FR_200,paid,102.6,102.6,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,11.39,LFC
+LFC31929,OK,2026-04-24,Nicolas Juvin,individual,FR,FR_200,paid,301.75,301.75,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,53.24,LFC
+LFC31930,OK,2026-04-24,Marion Ameline,individual,FR,FR_200,paid,158.78,158.78,0.0,3,Colissimo (48 à 72 heures),ETE15,28.01,LFC
+LFC31931,OK,2026-04-24,YONATHAN KAKON,company,FR,FR_200,paid,1173.98,1173.98,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31932,OK,2026-04-24,Vincent PETIT-LIAUDON,individual,FR,FR_200,paid,236.52,236.52,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,26.27,LFC
+LFC31933,OK,2026-04-24,Franck Ruetsch,individual,FR,FR_200,paid,146.99,146.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31934,OK,2026-04-24,Benoit LE LUHERNE,individual,FR,FR_200,paid,236.89,236.89,0.0,1,Chronopost Express (24 heures si la commande est passée avant 12h),MERCI30,95.09,LFC
+LFC31935,OK,2026-04-24,philippe dremaux,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31936,OK,2026-04-24,DIDIER MICHELI,individual,FR,FR_200,paid,223.83,223.83,0.0,3,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,24.87,LFC
+LFC31937,OK,2026-04-24,Timothée BONNET,company,FR,FR_200,paid,74.89,74.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31938,ECART,2026-04-24,DIDIER MICHELI,individual,FR,FR_200,paid,5.18,6.9,-1.72,1,Livraison Offerte,,0,LFC
+LFC31939,OK,2026-04-24,denis martin,individual,FR,FR_200,paid,282.59,282.59,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,31.39,LFC
+LFC31940,OK,2026-04-24,Erika Debu Valette,individual,FR,FR_200,paid,108.81,108.81,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,12.08,LFC
+LFC31941,OK,2026-04-24,JEROME ALAYRANGUES,company,FR,FR_200,paid,110.89,110.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31942,OK,2026-04-24,ANTONIO DA SILVA CRAVO,individual,FR,FR_200,paid,168.97,168.97,0.0,3,Colissimo (48 à 72 heures),ETE15,29.81,LFC
+LFC31943,OK,2026-04-24,Martine Orcurto,individual,FR,FR_200,paid,132.3,132.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.69,LFC
+LFC31944,OK,2026-04-24,Christiane Bossavie,individual,FR,FR_200,paid,78.21,78.21,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,8.68,LFC
+LFC31945,OK,2026-04-24,Pascal Bricka,individual,FR,FR_200,paid,189.81,189.81,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,21.08,LFC
+LFC31946,OK,2026-04-24,Rachel Legardeur,individual,FR,FR_200,paid,49.99,49.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31947,OK,2026-04-24,Virginie DELATOUR,individual,FR,FR_200,paid,99.9,99.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31948,OK,2026-04-24,Antoine Tartiere,individual,FR,FR_200,paid,266.99,266.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31949,OK,2026-04-24,lydie chauchat,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31950,OK,2026-04-24,Annie Pujol annie,individual,FR,FR_200,paid,221.21,221.21,0.0,4,Colissimo (48 à 72 heures),BIENVENUE10,24.57,LFC
+LFC31951,OK,2026-04-24,Guilhem Traversac,company,FR,FR_200,paid,441.0,441.0,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,48.99,LFC
+LFC31952,OK,2026-04-24,Eric VERMEERSCH,individual,BE,BE_210,paid,54.0,54.0,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,5.99,LFC
+LFC31953,OK,2026-04-24,Elene Wilkowski,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31954,OK,2026-04-24,Marjorie Lipka,individual,FR,FR_200,paid,124.95,124.95,0.0,1,Colissimo (48 à 72 heures),ETE15,22.04,LFC
+LFC31955,OK,2026-04-24,Emilie Charbonnel,individual,FR,FR_200,paid,176.99,176.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31956,OK,2026-04-24,didier CAZALIS,company,FR,FR_200,paid,143.82,143.82,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,15.98,LFC
+LFC31957,OK,2026-04-24,Gwen Boquet,individual,FR,FR_200,paid,176.79,176.79,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31958,OK,2026-04-24,Xavier FURNON,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31959,OK,2026-04-24,Sylvie BALLATORE,individual,FR,FR_200,paid,251.58,251.58,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,44.39,LFC
+LFC31960,OK,2026-04-24,Nathalie Colombu,individual,FR,FR_200,paid,176.99,176.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31961,OK,2026-04-24,Restaurant Le Casier,company,FR,FR_200,paid,599.9,599.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31962,OK,2026-04-24,Daniel Charmont,individual,FR,FR_200,paid,59.99,59.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31963,OK,2026-04-24,Astrid Perger,individual,FR,FR_200,paid,133.89,133.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31964,OK,2026-04-24,Danielle Bouvier,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),,0,LFC
+LFC31965,OK,2026-04-24,Emile Richard,individual,FR,FR_200,paid,113.99,113.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31966,OK,2026-04-24,Sophie LURASCHI,individual,FR,FR_200,paid,118.99,118.99,0.0,2,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,20.99,LFC
+LFC31967,OK,2026-04-24,david Chauvin,individual,FR,FR_200,paid,80.1,80.1,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,8.89,LFC
+LFC31968,OK,2026-04-24,Alain Gambus,individual,FR,FR_200,paid,195.99,195.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31969,OK,2026-04-24,Jean-Luc Brémont,individual,FR,FR_200,paid,88.99,88.99,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31970,OK,2026-04-24,ERIC - GAELLE FONGARNAN - LIABOEUF,individual,FR,FR_200,paid,63.6,63.6,0.0,3,Colissimo (48 à 72 heures),,0,LFC
+LFC31971,OK,2026-04-24,Carine HAMMERER,individual,FR,FR_200,paid,160.19,160.19,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,17.79,LFC
+LFC31972,OK,2026-04-24,Lydie BANCE,individual,FR,FR_200,paid,96.9,96.9,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),EXCLU15,17.09,LFC
+LFC31973,OK,2026-04-24,Alex GHORANI,individual,FR,FR_200,paid,152.9,152.9,0.0,1,Colissimo (48 à 72 heures),,0,LFC
+LFC31974,OK,2026-04-24,Guest's Events,company,FR,FR_200,paid,313.83,313.83,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,34.87,LFC
+LFC31975,OK,2026-04-24,David Parnaudeau,individual,FR,FR_200,paid,152.0,152.0,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,16.88,LFC
+LFC31976,OK,2026-04-24,Aurélien Létang,individual,FR,FR_200,paid,213.3,213.3,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,23.69,LFC
+LFC31977,OK,2026-04-24,Seb Gave,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31978,OK,2026-04-24,Celine Landat,individual,FR,FR_200,paid,240.21,240.21,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,26.68,LFC
+LFC31979,OK,2026-04-24,elodie boyer,individual,FR,FR_200,paid,97.66,97.66,0.0,2,Colissimo (48 à 72 heures),ETE15,17.23,LFC
+LFC31980,OK,2026-04-24,Manuel Rodrigues,individual,FR,FR_200,paid,102.6,102.6,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,11.39,LFC
+LFC31981,OK,2026-04-24,sophie albarede,individual,FR,FR_200,paid,79.89,79.89,0.0,2,Colissimo (48 à 72 heures),,0,LFC
+LFC31982,OK,2026-04-24,Laurent Plichon,individual,FR,FR_200,paid,269.91,269.91,0.0,1,Livraison en point de retrait Mondial Relay (choix après le paiement),BIENVENUE10,29.99,LFC
+LFC31983,OK,2026-04-24,Charlène Tenen,individual,FR,FR_200,paid,95.22,95.22,0.0,3,Colissimo (48 à 72 heures),BIENVENUE10,10.57,LFC
+LFC31984,OK,2026-04-24,Jean-François Scalbert,individual,FR,FR_200,paid,51.0,51.0,0.0,1,Colissimo (48 à 72 heures),EXCLU15,8.99,LFC
+TZ5660,OK,2026-04-20,Jochen Vogel,individual,DE,DE_190,paid,59.9,59.9,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5661,OK,2026-04-20,Miriam Noemi Amann,individual,AT,AT_200,paid,89.99,89.99,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,9.99,TZ
+TZ5662,OK,2026-04-20,Ramon Marquart,individual,DE,DE_190,paid,106.2,106.2,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,11.79,TZ
+TZ5663,OK,2026-04-21,Robert Saf,individual,AT,AT_200,paid,99.98,99.98,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5664,OK,2026-04-21,Adelheid Schaber,company,AT,AT_200,paid,143.73,143.73,0.0,3,DHL (48-72 Stunden),WILLKOMMEN10,15.96,TZ
+TZ5665,OK,2026-04-21,felipe kaiser,individual,DE,DE_190,paid,54.0,54.0,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,5.99,TZ
+TZ5666,OK,2026-04-21,Furat Yenidogan,individual,DE,DE_190,paid,255.89,255.89,0.0,2,DHL (48-72 Stunden),,0,TZ
+TZ5667,OK,2026-04-21,martin heinz,individual,DE,DE_190,paid,725.39,725.39,0.0,5,DHL (48-72 Stunden),,0,TZ
+TZ5668,OK,2026-04-21,Elena Petrova-Berghausen,individual,DE,DE_190,paid,51.0,51.0,0.0,1,DHL (48-72 Stunden),DANKE15,8.99,TZ
+TZ5669,OK,2026-04-21,Joachim Hermann,individual,DE,DE_190,paid,169.07,169.07,0.0,1,DHL (48-72 Stunden),WILLKOMMEN15,29.83,TZ
+TZ5670,OK,2026-04-21,Claudia Brall,individual,DE,DE_190,paid,85.9,85.9,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5672,OK,2026-04-22,Judith Riva Bachmann,individual,CH,exempt,paid,79.98,79.98,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5673,OK,2026-04-22,Vanessa Gazzari,individual,AT,AT_200,paid,116.91,116.91,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,12.99,TZ
+TZ5674,OK,2026-04-22,Oliver Fink,company,DE,DE_190,paid,1158.29,1158.29,0.0,2,DHL (48-72 Stunden),WILLKOMMEN10,128.69,TZ
+TZ5675,OK,2026-04-23,Hartmut Bode,individual,DE,DE_190,paid,94.89,94.89,0.0,2,DHL (48-72 Stunden),,0,TZ
+TZ5676,OK,2026-04-23,Peter Nonnweiler,individual,DE,DE_190,paid,29.9,29.9,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5677,OK,2026-04-23,Amjad Nayel,individual,DE,DE_190,paid,246.99,246.99,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5678,OK,2026-04-23,Viola Kaufmann,company,DE,DE_190,paid,50.92,50.92,0.0,1,DHL (48-72 Stunden),WILLKOMMEN15,8.98,TZ
+TZ5679,OK,2026-04-23,Janin Gün,individual,DE,DE_190,paid,118.99,118.99,0.0,2,DHL (48-72 Stunden),WILLKOMMEN15,20.99,TZ
+TZ5680,OK,2026-04-23,Jenny Heide,individual,DE,DE_190,paid,353.98,353.98,0.0,2,DHL (48-72 Stunden),,0,TZ
+TZ5681,OK,2026-04-24,Maik Rath,individual,DE,DE_190,paid,113.99,113.99,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5682,OK,2026-04-24,Lutz Gorray,individual,DE,DE_190,paid,132.3,132.3,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,14.69,TZ
+TZ5683,OK,2026-04-24,Lars Kannegiesser,individual,DE,DE_190,paid,236.99,236.99,0.0,1,DHL (48-72 Stunden),,0,TZ
+TZ5684,OK,2026-04-24,Clara Sargant,individual,AT,AT_200,paid,72.0,72.0,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,7.99,TZ
+TZ5685,OK,2026-04-24,Peter Coster,individual,ES,ES_210,paid,320.49,320.49,0.0,1,DHL (48-72 Stunden),WILLKOMMEN10,34.49,TZ
+COCO3349,OK,2026-04-20,REMI BLACHE,individual,FR,FR_200,paid,519.8,519.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3350,OK,2026-04-20,Romain Muzard,individual,FR,FR_200,paid,599.9,599.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3351,OK,2026-04-20,Juliette Lemerle,individual,FR,FR_200,paid,199.9,199.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3352,OK,2026-04-21,Angelique Rajaonah,individual,FR,FR_200,paid,195.42,195.42,0.0,1,Colissimo (48 à 72 heures),EXCLU15,34.48,MTC
+COCO3353,OK,2026-04-21,Roseline LATAPIE,individual,FR,FR_200,paid,134.91,134.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.99,MTC
+COCO3354,OK,2026-04-21,Roland Vignais,individual,FR,FR_200,paid,254.83,254.83,0.0,1,Colissimo (48 à 72 heures),EXCLU15,44.97,MTC
+COCO3355,OK,2026-04-21,Mélanie CHEVALIER,individual,FR,FR_200,paid,467.91,467.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,51.99,MTC
+COCO3356,OK,2026-04-21,jean Franceschini,individual,FR,FR_200,paid,469.8,469.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3357,OK,2026-04-21,Sarah COLIN,individual,FR,FR_200,paid,287.82,287.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,31.98,MTC
+COCO3358,OK,2026-04-21,Sonia Chassint,company,FR,FR_200,paid,287.82,287.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,31.98,MTC
+COCO3359,OK,2026-04-21,Benoit Deschamps,company,FR,FR_200,paid,314.42,314.42,0.0,1,Colissimo (48 à 72 heures),MERCI15,55.48,MTC
+COCO3360,OK,2026-04-21,fabienne GARCIA,individual,FR,FR_200,paid,299.9,299.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3361,OK,2026-04-21,LUDOVIC CHAUTANT,individual,FR,FR_200,paid,179.91,179.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,19.99,MTC
+COCO3362,OK,2026-04-21,Isabelle Roubeix,individual,FR,FR_200,paid,188.82,188.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,20.98,MTC
+COCO3363,OK,2026-04-21,Ursula van Lith,individual,FR,FR_200,paid,152.82,152.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,16.98,MTC
+COCO3364,OK,2026-04-21,jclaude Berthe,individual,FR,FR_200,paid,269.82,269.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,29.98,MTC
+COCO3365,OK,2026-04-21,Amandine TORRECILLAS,company,FR,FR_200,paid,297.81,297.81,0.0,2,Chronopost Express (24 heures si la commande est passée avant 12h),BIENVENUE10,31.98,MTC
+COCO3366,OK,2026-04-21,MICKAEL ADET,company,FR,FR_200,paid,539.82,539.82,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,59.98,MTC
+COCO3367,OK,2026-04-22,Florian Marcon,company,FR,FR_200,paid,539.82,539.82,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,59.98,MTC
+COCO3368,OK,2026-04-22,Christine VINOLO,individual,FR,FR_200,paid,369.9,369.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3369,OK,2026-04-22,Romain LACROIX,individual,FR,FR_200,paid,305.91,305.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,33.99,MTC
+COCO3370,OK,2026-04-22,Géraldine Bretault,individual,FR,FR_200,paid,162.81,162.81,0.0,2,Chronopost Express (24 heures si la commande est passée avant 12h),BIENVENUE10,16.98,MTC
+COCO3371,OK,2026-04-22,Mathieu Cezard,individual,FR,FR_200,paid,329.7,329.7,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3372,OK,2026-04-22,pierre moulin,company,FR,FR_200,paid,449.9,449.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3373,OK,2026-04-22,Raymond Perez,individual,FR,FR_200,paid,134.91,134.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.99,MTC
+COCO3374,OK,2026-04-22,Aude-Helene Gay,individual,FR,FR_200,paid,127.33,127.33,0.0,2,Colissimo (48 à 72 heures),MERCI15,22.47,MTC
+COCO3376,OK,2026-04-22,Emilie Samson,individual,FR,FR_200,paid,319.8,319.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3377,OK,2026-04-22,Nathalie et christian Rimbault,individual,FR,FR_200,paid,116.91,116.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,12.99,MTC
+COCO3378,OK,2026-04-23,Nicolas Lanteri Paysages,company,FR,FR_200,paid,1649.7,1649.7,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3379,OK,2026-04-23,Charlotte PIDOUX,individual,FR,FR_200,paid,299.9,299.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3380,OK,2026-04-23,Anthony Marchand,individual,FR,FR_200,paid,469.8,469.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3381,OK,2026-04-23,ALAIN GUETTAF,individual,FR,FR_200,paid,423.76,423.76,0.0,2,Colissimo (48 à 72 heures),EXCLU20,105.94,MTC
+COCO3382,OK,2026-04-23,Cindy Bertin,individual,FR,FR_200,paid,152.82,152.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,16.98,MTC
+COCO3383,OK,2026-04-23,Martine Chapeyron,individual,FR,FR_200,paid,116.91,116.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,12.99,MTC
+COCO3384,OK,2026-04-23,carole jacqueline,individual,FR,FR_200,paid,89.9,89.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3385,OK,2026-04-23,Marguerite castaing,individual,FR,FR_200,paid,134.91,134.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,14.99,MTC
+COCO3386,OK,2026-04-23,Sébastien COURCAULT,company,FR,FR_200,paid,519.8,519.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3387,OK,2026-04-23,Fabien Rodriguez,individual,FR,FR_200,paid,519.9,519.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3388,OK,2026-04-23,Philippe Chevalier,individual,FR,FR_200,paid,339.9,339.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3389,OK,2026-04-23,Francois Debosque,individual,FR,FR_200,paid,469.8,469.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+COCO3390,OK,2026-04-23,Emeric Bardot,individual,FR,FR_200,paid,485.82,485.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,53.98,MTC
+COCO3391,OK,2026-04-23,Rémi Lagrée,individual,FR,FR_200,paid,539.91,539.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,59.99,MTC
+COCO3392,OK,2026-04-24,Dimitri Onipenko,individual,FR,FR_200,paid,287.82,287.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,31.98,MTC
+COCO3393,OK,2026-04-24,Isabelle FAURE,individual,FR,FR_200,paid,299.9,299.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3394,OK,2026-04-24,Maëlle GUGUEN,individual,FR,FR_200,paid,189.9,189.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3395,OK,2026-04-24,Julie LACROIX,individual,FR,FR_200,paid,287.82,287.82,0.0,2,Colissimo (48 à 72 heures),BIENVENUE10,31.98,MTC
+COCO3396,OK,2026-04-24,Alexandre Mangold,individual,FR,FR_200,paid,369.9,369.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3397,OK,2026-04-24,Michèle DU SARTZ,individual,FR,FR_200,paid,149.9,149.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3398,OK,2026-04-24,Philippe VAUTRIN,individual,FR,FR_200,paid,169.92,169.92,0.0,1,Colissimo (48 à 72 heures),EXCLU15,29.98,MTC
+COCO3399,OK,2026-04-24,Gerard Sébastien,individual,FR,FR_200,paid,332.91,332.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,36.99,MTC
+COCO3400,OK,2026-04-24,Anne tora,individual,FR,FR_200,paid,332.91,332.91,0.0,1,Colissimo (48 à 72 heures),BIENVENUE10,36.99,MTC
+COCO3401,OK,2026-04-24,Marie Chalopin,company,FR,FR_200,paid,189.9,189.9,0.0,1,Colissimo (48 à 72 heures),,0,MTC
+COCO3402,OK,2026-04-24,céline mira,individual,FR,FR_200,paid,149.8,149.8,0.0,2,Colissimo (48 à 72 heures),,0,MTC
+RDC3907,OK,2026-04-20,ferran fitó i bertran,individual,ES,ES_210,paid,156.99,156.99,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3908,OK,2026-04-20,FRANCISCO ALBUIXECH CUECOS,individual,ES,ES_210,paid,195.99,195.99,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3909,OK,2026-04-21,JOSÉ FERRER FIGOLS,individual,ES,ES_210,paid,156.99,156.99,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3910,OK,2026-04-21,Genís Corrons,company,ES,ES_210,paid,989.89,989.89,0.0,2,SEUR (48 a 72 horas),,0,RED
+RDC3911,OK,2026-04-21,Jordi Junyent Guardia,individual,ES,ES_210,paid,113.99,113.99,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3912,OK,2026-04-21,Alberto Martinez Ceballos,company,ES,ES_210,paid,205.99,205.99,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3913,OK,2026-04-21,Alejandro Schindler Lopez,individual,ES,ES_210,paid,198.9,198.9,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3914,OK,2026-04-21,Matthias Janvier,company,PT,PT_230,pending,318.59,318.59,0.0,1,SEUR (48 a 72 horas),BIENVENIDO10,35.39,RED
+RDC3915,OK,2026-04-21,Juan Carlos Ramon Nadal,individual,ES,ES_210,paid,152.9,152.9,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3916,OK,2026-04-21,Yolanda Stas,individual,ES,ES_210,paid,316.99,316.99,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3917,OK,2026-04-21,Toni Tapia,individual,ES,ES_210,paid,250.83,250.83,0.0,4,SEUR (48 a 72 horas),BIENVENIDO10,27.86,RED
+RDC3918,OK,2026-04-21,ricard comellas,company,ES,ES_210,paid,177.98,177.98,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3919,OK,2026-04-21,Joan Costabella,individual,ES,ES_210,paid,79.99,79.99,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3920,OK,2026-04-21,Andres Vega jimenez,individual,ES,ES_210,paid,120.89,120.89,0.0,2,SEUR (48 a 72 horas),,0,RED
+RDC3921,OK,2026-04-22,Marina Marina,individual,ES,ES_210,paid,189.9,189.9,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3922,OK,2026-04-22,Luis Pinto,company,PT,PT_230,paid,290.98,290.98,0.0,2,SEUR (48 a 72 horas),,0,RED
+RDC3923,OK,2026-04-22,Teresa Sequeros,individual,ES,ES_210,paid,150.21,150.21,0.0,2,SEUR (48 a 72 horas),BIENVENIDO10,16.68,RED
+RDC3924,OK,2026-04-22,ALEJANDRO MOYA LOPEZ,individual,ES,ES_210,paid,9.9,9.9,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3925,OK,2026-04-22,Álvaro Corral,individual,ES,ES_210,paid,125.79,125.79,0.0,3,SEUR (48 a 72 horas),,0,RED
+RDC3926,OK,2026-04-22,juan david mateu borras,individual,ES,ES_210,paid,60.21,60.21,0.0,2,SEUR (48 a 72 horas),BIENVENIDO10,6.68,RED
+RDC3928,OK,2026-04-22,Federico Garrido Garrido,individual,ES,ES_210,paid,267.21,267.21,0.0,2,Punto Pack - Celeritas (48 a 72 horas),BIENVENIDO10,29.68,RED
+RDC3929,OK,2026-04-22,Juan Manuel Ibañez Tello,individual,ES,ES_210,paid,213.3,213.3,0.0,1,SEUR (48 a 72 horas),BIENVENIDO10,23.69,RED
+RDC3930,OK,2026-04-23,pedro barras de la peña,individual,ES,ES_210,paid,699.4,699.4,0.0,3,SEUR (48 a 72 horas),,0,RED
+RDC3931,OK,2026-04-23,JORGE MOSCAT CARMENADO,individual,ES,ES_210,paid,96.9,96.9,0.0,1,SEUR (48 a 72 horas),PROMO15,17.09,RED
+RDC3932,OK,2026-04-23,Monica Burnay,individual,PT,PT_230,paid,88.99,88.99,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3933,OK,2026-04-23,Cristina Canela,company,ES,ES_210,paid,353.98,353.98,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3934,OK,2026-04-23,victor planells,company,ES,ES_210,paid,301.14,301.14,0.0,3,SEUR (48 a 72 horas),BIENVENIDO10,33.46,RED
+RDC3935,OK,2026-04-23,Sergi Medir,individual,ES,ES_210,paid,222.3,222.3,0.0,1,SEUR (48 a 72 horas),BIENVENIDO10,24.69,RED
+RDC3936,OK,2026-04-23,timothee ducrocq,company,ES,ES_210,paid,783.98,783.98,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3937,OK,2026-04-23,Audrey FAURE,individual,ES,ES_210,paid,79.99,79.99,0.0,1,Punto Pack - Celeritas (48 a 72 horas),,0,RED
+RDC3938,OK,2026-04-23,Pep Gaya Esteve,individual,ES,ES_210,paid,259.96,259.96,0.0,2,SEUR (48 a 72 horas),,0,RED
+RDC3939,OK,2026-04-23,Mariana Albuquerque,company,PT,PT_230,paid,179.91,179.91,0.0,1,SEUR (48 a 72 horas),BIENVENIDO10,19.99,RED
+RDC3940,OK,2026-04-24,Gloria Carbonell,company,ES,ES_210,paid,239.97,239.97,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3941,OK,2026-04-24,Camilla Mash,company,ES,ES_210,paid,474.7,474.7,0.0,3,SEUR (48 a 72 horas),,0,RED
+RDC3942,OK,2026-04-24,Rosa Pardo Sanchez,company,ES,ES_210,pending,1895.92,1895.92,0.0,1,SEUR (48 a 72 horas),,0,RED
+RDC3943,OK,2026-04-24,JOSEFA GARCIA DELGADO,company,ES,ES_210,paid,176.4,176.4,0.0,1,SEUR (48 a 72 horas),BIENVENIDO10,19.59,RED
+HC3299,OK,2026-04-20,Barbara Naesens,individual,BE,BE_210,paid,189.8,189.8,0.0,2,DPD,,0,HET
+HC3301,OK,2026-04-22,Thea Messemaker,company,NL,NL_210,paid,633.98,633.98,0.0,1,DPD,,0,HET
+HC3302,OK,2026-04-22,Sander Werner,company,NL,NL_210,paid,113.99,113.99,0.0,1,DPD,,0,HET
+HC3303,OK,2026-04-22,Kornelis Dijk,individual,NL,NL_210,paid,113.99,113.99,0.0,1,DPD,,0,HET
+HC3304,OK,2026-04-22,Edwin de Vries,individual,NL,NL_210,paid,216.79,216.79,0.0,2,DPD,,0,HET
+HC3305,OK,2026-04-22,Juliane Schroeder-Sercu,individual,BE,BE_210,paid,373.69,373.69,0.0,4,DPD,,0,HET
+HC3306,OK,2026-04-22,Erwin ten Bras,company,NL,NL_210,paid,269.8,269.8,0.0,2,Mondial Relay – Relaispunt,,0,HET
+HC3308,OK,2026-04-23,Karen De Roover,individual,BE,BE_210,paid,102.6,102.6,0.0,1,Mondial Relay – Relaispunt,WELKOM10,11.39,HET
+HC3309,OK,2026-04-23,Mama Saman-riemens,individual,NL,NL_210,paid,49.99,49.99,0.0,1,DPD,,0,HET
+HC3310,OK,2026-04-23,Annemarie Hofman,individual,NL,NL_210,paid,176.99,176.99,0.0,1,DPD,,0,HET
+HC3311,OK,2026-04-23,Marie Panken,individual,NL,NL_210,paid,9.9,9.9,0.0,1,DPD,,0,HET
+HC3312,OK,2026-04-23,Amber Maas,individual,NL,NL_210,paid,377.64,377.64,0.0,3,DPD,WELKOM10,41.96,HET
+HC3313,OK,2026-04-23,Lea Van der Ven,company,NL,NL_210,paid,113.99,113.99,0.0,1,DPD,,0,HET
+HC3314,OK,2026-04-23,Martine Van De Walle,individual,BE,BE_210,paid,182.61,182.61,0.0,2,DPD,WELKOM10,20.28,HET
+HC3315,OK,2026-04-23,Nikky Kuis,individual,NL,NL_210,paid,269.91,269.91,0.0,1,DPD,WELKOM10,29.99,HET
+HC3316,OK,2026-04-23,Hansie Pilon,individual,NL,NL_210,paid,49.99,49.99,0.0,1,DPD,,0,HET
+HC3317,OK,2026-04-24,Mandy Huisman,individual,NL,NL_210,paid,54.0,54.0,0.0,1,DPD,WELKOM10,5.99,HET
+HC3318,OK,2026-04-24,Martine Vlaminck,company,BE,BE_210,paid,119.8,119.8,0.0,1,DPD,,0,HET
+HC3319,OK,2026-04-24,Marleen Hoogerwerf,individual,NL,NL_210,paid,88.99,88.99,0.0,1,DPD,,0,HET
+HC3320,OK,2026-04-24,Floris Veulemans,individual,BE,BE_210,paid,80.1,80.1,0.0,1,DPD,WELKOM10,8.89,HET
+RM1420,OK,2026-04-21,Filippo Fratangeli,company,IT,IT_220,paid,238.5,238.5,0.0,1,InPost Point (48-72 ore),BENVENUTO10,26.49,RETE
+RM1421,OK,2026-04-21,Giulia Dal Pozzo,company,IT,IT_220,paid,89.7,89.7,0.0,1,Poste Italiane (48-72 ore),,0,RETE
+RM1422,OK,2026-04-22,Fabian Ludwig,company,IT,IT_220,pending,489.99,489.99,0.0,1,InPost Point (48-72 ore),,0,RETE
+RM1423,OK,2026-04-22,Carlo Alessandrelli Alessandrelli,company,IT,IT_220,paid,269.82,269.82,0.0,1,InPost Point (48-72 ore),BENVENUTO10,29.98,RETE
+RM1424,OK,2026-04-22,vito bellafiore,individual,IT,IT_220,paid,9.9,9.9,0.0,1,InPost Point (48-72 ore),,0,RETE
+RM1425,OK,2026-04-24,Anna Mattera,individual,IT,IT_220,paid,219.9,219.9,0.0,1,Poste Italiane (48-72 ore),,0,RETE
+RM1426,OK,2026-04-24,SHUMIN JIA,company,IT,IT_220,paid,856.98,856.98,0.0,2,InPost Point (48-72 ore),,0,RETE
+RM1427,OK,2026-04-24,Mauro grop,company,IT,IT_220,paid,443.68,443.68,0.0,2,InPost Point (48-72 ore),BENVENUTO10,49.29,RETE
