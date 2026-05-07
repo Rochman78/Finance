@@ -358,8 +358,8 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
 
         # Normalize source_type: Shopify may return "Payments::Refund" instead of "refund"
         norm_type = source_type.rsplit("::", 1)[-1].lower() if source_type else ""
-        if norm_type not in ("charge", "refund") or not source_order_id:
-            # Silently skip internal transaction types (payout, dispute, adjustment, etc.)
+        if norm_type not in ("charge", "refund", "dispute") or not source_order_id:
+            # Silently skip internal transaction types (payout, adjustment, etc.)
             continue
 
         order = get_order(shopify_token, store_url, source_order_id)
@@ -432,6 +432,44 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
                     "debit":  "0.00",
                     "credit": f"{fee_abs:.2f}",
                     "label":  f"Remb. frais {customer_name} - {order_name}",
+                })
+
+        elif norm_type == "dispute":
+            # Disputes: amount can be negative (chargeback) or positive (won dispute)
+            # Net effect on payout = amount, fees go to 627
+            dispute_amount = amount  # negative = lost, positive = won
+            total_gross += dispute_amount
+            total_fees  += fee_abs
+
+            if dispute_amount < 0:
+                # Lost dispute: Shopify takes back the money
+                abs_dispute = abs(dispute_amount)
+                log.info(f"   ⚠️ DISPUTE {order_name} → {customer_name} | -{abs_dispute}€ (frais: {fee_abs}€)")
+                client_lines.append(f"{customer_name} — -{abs_dispute:.2f}€ (dispute)")
+
+                lines.append({
+                    "ledger_account_id": ledger_account_id,
+                    "debit":  f"{abs_dispute:.2f}",
+                    "credit": "0.00",
+                    "label":  f"Dispute {customer_name} - {order_name}",
+                })
+                if fee_abs > 0:
+                    lines.append({
+                        "ledger_account_id": frais_id,
+                        "debit":  f"{fee_abs:.2f}",
+                        "credit": "0.00",
+                        "label":  f"Frais dispute {customer_name} - {order_name}",
+                    })
+            else:
+                # Won dispute: Shopify returns the money
+                log.info(f"   ✅ DISPUTE gagné {order_name} → {customer_name} | +{dispute_amount}€")
+                client_lines.append(f"{customer_name} — +{dispute_amount:.2f}€ (dispute gagné)")
+
+                lines.append({
+                    "ledger_account_id": ledger_account_id,
+                    "debit":  "0.00",
+                    "credit": f"{dispute_amount:.2f}",
+                    "label":  f"Dispute gagné {customer_name} - {order_name}",
                 })
 
     if not lines and payout_amount < 0:
