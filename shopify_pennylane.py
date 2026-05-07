@@ -358,8 +358,24 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
 
         # Normalize source_type: Shopify may return "Payments::Refund" instead of "refund"
         norm_type = source_type.rsplit("::", 1)[-1].lower() if source_type else ""
+        txn_type = txn.get("type", "").lower()
+
+        # Handle debits/adjustments without order (Shopify fees, chargebacks, etc.)
+        if txn_type in ("debit", "adjustment") and not source_order_id:
+            debit_amount = abs(float(txn.get("amount", "0")))
+            if debit_amount > 0:
+                total_gross -= debit_amount
+                log.info(f"   📌 {txn_type.upper()} sans commande | -{debit_amount}€ → frais Shopify")
+                lines.append({
+                    "ledger_account_id": frais_id,
+                    "debit":  f"{debit_amount:.2f}",
+                    "credit": "0.00",
+                    "label":  f"Frais Shopify {txn_type} {payout_date}",
+                })
+            continue
+
         if norm_type not in ("charge", "refund", "dispute") or not source_order_id:
-            # Silently skip internal transaction types (payout, adjustment, etc.)
+            # Silently skip internal transaction types (payout, etc.)
             continue
 
         order = get_order(shopify_token, store_url, source_order_id)
