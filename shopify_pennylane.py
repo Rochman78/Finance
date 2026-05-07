@@ -48,6 +48,7 @@ PL_HEADERS        = {"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type
 COMPTE_TRESORERIE = "411INTERNET"
 COMPTE_FRAIS      = "627001"
 COMPTE_ECART      = "471"
+COMPTE_LITIGES    = "467505"
 JOURNAL_CODE      = "ENCSP"
 
 # --- BASE DE DONNÉES ---
@@ -330,7 +331,7 @@ def create_ledger_entry(date: str, label: str, journal_id: int, lines: list, tes
 def process_payout(shopify_token: str, store_config: dict, payout: dict,
                    invoice_index: dict, customers: dict,
                    journal_id: int, tresorerie_id: int, frais_id: int,
-                   ecart_id: int, test_mode: bool) -> dict:
+                   ecart_id: int, litiges_id: int, test_mode: bool) -> dict:
     store_name = store_config["name"]
     store_url  = store_config["store"]
     payout_id  = payout["id"]
@@ -451,41 +452,40 @@ def process_payout(shopify_token: str, store_config: dict, payout: dict,
                 })
 
         elif norm_type == "dispute":
-            # Disputes: amount can be negative (chargeback) or positive (won dispute)
-            # Net effect on payout = amount, fees go to 627
-            dispute_amount = amount  # negative = lost, positive = won
+            # Disputes use 467505 (litiges) as transit account
+            dispute_amount = amount  # negative = chargeback, positive = won
             total_gross += dispute_amount
             total_fees  += fee_abs
 
             if dispute_amount < 0:
-                # Lost dispute: Shopify takes back the money
+                # Chargeback: money leaves → park in 467505
                 abs_dispute = abs(dispute_amount)
-                log.info(f"   ⚠️ DISPUTE {order_name} → {customer_name} | -{abs_dispute}€ (frais: {fee_abs}€)")
-                client_lines.append(f"{customer_name} — -{abs_dispute:.2f}€ (dispute)")
+                log.info(f"   ⚠️ DISPUTE {order_name} → {customer_name} | -{abs_dispute}€ → 467505")
+                client_lines.append(f"{customer_name} — -{abs_dispute:.2f}€ (litige)")
 
                 lines.append({
-                    "ledger_account_id": ledger_account_id,
+                    "ledger_account_id": litiges_id,
                     "debit":  f"{abs_dispute:.2f}",
                     "credit": "0.00",
-                    "label":  f"Dispute {customer_name} - {order_name}",
+                    "label":  f"Litige {customer_name} - {order_name}",
                 })
                 if fee_abs > 0:
                     lines.append({
                         "ledger_account_id": frais_id,
                         "debit":  f"{fee_abs:.2f}",
                         "credit": "0.00",
-                        "label":  f"Frais dispute {customer_name} - {order_name}",
+                        "label":  f"Frais litige {customer_name} - {order_name}",
                     })
             else:
-                # Won dispute: Shopify returns the money
-                log.info(f"   ✅ DISPUTE gagné {order_name} → {customer_name} | +{dispute_amount}€")
-                client_lines.append(f"{customer_name} — +{dispute_amount:.2f}€ (dispute gagné)")
+                # Won dispute: money returns → close 467505
+                log.info(f"   ✅ DISPUTE gagné {order_name} → {customer_name} | +{dispute_amount}€ → 467505 soldé")
+                client_lines.append(f"{customer_name} — +{dispute_amount:.2f}€ (litige gagné)")
 
                 lines.append({
-                    "ledger_account_id": ledger_account_id,
+                    "ledger_account_id": litiges_id,
                     "debit":  "0.00",
                     "credit": f"{dispute_amount:.2f}",
-                    "label":  f"Dispute gagné {customer_name} - {order_name}",
+                    "label":  f"Litige gagné {customer_name} - {order_name}",
                 })
 
     if not lines and payout_amount < 0:
@@ -593,8 +593,9 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
     tresorerie_id = get_account_id(COMPTE_TRESORERIE)
     frais_id      = get_account_id(COMPTE_FRAIS)
     ecart_id      = get_account_id(COMPTE_ECART)
+    litiges_id    = get_account_id(COMPTE_LITIGES)
     journal_id    = get_journal_id(JOURNAL_CODE)
-    if not tresorerie_id or not frais_id or not ecart_id or not journal_id:
+    if not tresorerie_id or not frais_id or not ecart_id or not litiges_id or not journal_id:
         telegram_send("🚨 <b>Shopify → Pennylane</b>\n❌ Compte ou journal introuvable")
         return
 
@@ -634,7 +635,7 @@ def run(target_date: str, test_mode: bool, store_filter: str | None = None, forc
                 token, store_config, payout,
                 invoice_index, customers,
                 journal_id, tresorerie_id, frais_id,
-                ecart_id, test_mode
+                ecart_id, litiges_id, test_mode
             )
             if result and result.get("success"):
                 if not test_mode:
