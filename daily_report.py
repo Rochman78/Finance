@@ -5,15 +5,19 @@ Dépenses Google Ads J-1 par boutique → Google Sheets (feuille "REPORT GOOGLE 
 CA HT J-1 par pays Amazon → Google Sheets (feuille "REPORT AMAZON VENTES")
 Dépenses Amazon Ads J-1 par pays → Google Sheets (feuille "REPORT AMAZON ADS")
 Dépenses Meta Ads J-1 (LFC + COCO) → Google Sheets (feuille "REPORT META ADS")
+Dépenses Microsoft Ads J-1 (LFC) → Google Sheets (feuille "REPORT MICROSOFT ADS")
 """
 
 import os
 import sys
+import io
+import re
 import logging
 import argparse
 import requests
 import time
 import gzip
+import zipfile
 import json as json_mod
 from datetime import datetime, date as date_type, timedelta
 from zoneinfo import ZoneInfo
@@ -118,6 +122,22 @@ META_ADS_STORES = [
 META_ADS_ORDER = [s["name"] for s in META_ADS_STORES]
 
 # =============================================================
+# CONFIG MICROSOFT ADS (Bing)
+# =============================================================
+MICROSOFT_ADS_CLIENT_ID       = os.environ.get("MICROSOFT_ADS_CLIENT_ID", "")
+MICROSOFT_ADS_CLIENT_SECRET   = os.environ.get("MICROSOFT_ADS_CLIENT_SECRET", "")
+MICROSOFT_ADS_REFRESH_TOKEN   = os.environ.get("MICROSOFT_ADS_REFRESH_TOKEN", "")
+MICROSOFT_ADS_DEVELOPER_TOKEN = os.environ.get("MICROSOFT_ADS_DEVELOPER_TOKEN", "")
+MICROSOFT_ADS_TOKEN_URL       = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+MICROSOFT_ADS_REPORTING_URL   = "https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/V13/ReportingService.svc"
+
+# Comptes Microsoft Ads suivis (label = nom de ligne dans Google Sheets)
+MICROSOFT_ADS_STORES = [
+    {"name": "LFC", "account_id": "187047387"},
+]
+MICROSOFT_ADS_ORDER = [s["name"] for s in MICROSOFT_ADS_STORES]
+
+# =============================================================
 # CONFIG GOOGLE SHEETS
 # =============================================================
 SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
@@ -127,6 +147,7 @@ SHEET_GADS       = "REPORT GOOGLE ADS"
 SHEET_AMAZON     = "REPORT AMAZON VENTES"
 SHEET_AMAZON_ADS = "REPORT AMAZON ADS"
 SHEET_META_ADS   = "REPORT META ADS"
+SHEET_MS_ADS     = "REPORT MICROSOFT ADS"
 
 SERVICE_ACCOUNT_EMAIL = os.environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL", "")
 PRIVATE_KEY           = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
@@ -644,6 +665,203 @@ def fetch_meta_ads_spend_all(date_str: str) -> dict:
 
 
 # =============================================================
+# MICROSOFT ADS — Récupération des dépenses publicitaires
+# =============================================================
+# Workflow SOAP : OAuth → SubmitGenerateReport → PollGenerateReport (jusqu'à
+# Success) → download ZIP CSV → parse. Endpoint /V13/ReportingService.svc.
+
+_ms_ads_token_cache = {"token": None, "expires_at": 0}
+
+
+def get_ms_ads_access_token() -> str:
+    now = time.time()
+    if _ms_ads_token_cache["token"] and now < _ms_ads_token_cache["expires_at"]:
+        return _ms_ads_token_cache["token"]
+    resp = requests.post(
+        MICROSOFT_ADS_TOKEN_URL,
+        data={
+            "client_id":     MICROSOFT_ADS_CLIENT_ID,
+            "client_secret": MICROSOFT_ADS_CLIENT_SECRET,
+            "refresh_token": MICROSOFT_ADS_REFRESH_TOKEN,
+            "grant_type":    "refresh_token",
+            "scope":         "offline_access https://ads.microsoft.com/msads.manage",
+        },
+        timeout=20,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"MS Ads token: {resp.status_code} {resp.text[:200]}")
+    data = resp.json()
+    _ms_ads_token_cache["token"]      = data["access_token"]
+    _ms_ads_token_cache["expires_at"] = now + data.get("expires_in", 3600) - 60
+    log.info("  Token Microsoft Ads OK")
+    return data["access_token"]
+
+
+def _ms_xml_val(xml: str, tag: str):
+    m = re.search(rf"<{tag}[^>]*>([^<]*)</{tag}>", xml)
+    return m.group(1) if m else None
+
+
+def _ms_build_submit_soap(token: str, account_ids: list, since: str, until: str) -> str:
+    sp = since.split("-"); ep = until.split("-")
+    ids_xml = "".join(f"<a:long>{int(i)}</a:long>" for i in account_ids)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
+        '<s:Header xmlns="https://bingads.microsoft.com/Reporting/v13">'
+        f'<AuthenticationToken>{token}</AuthenticationToken>'
+        f'<DeveloperToken>{MICROSOFT_ADS_DEVELOPER_TOKEN}</DeveloperToken>'
+        '</s:Header><s:Body>'
+        '<SubmitGenerateReportRequest xmlns="https://bingads.microsoft.com/Reporting/v13">'
+        '<ReportRequest i:type="AccountPerformanceReportRequest">'
+        '<ExcludeColumnHeaders>false</ExcludeColumnHeaders>'
+        '<ExcludeReportFooter>true</ExcludeReportFooter>'
+        '<ExcludeReportHeader>true</ExcludeReportHeader>'
+        '<Format>Csv</Format><Language>English</Language>'
+        '<ReportName>DailySpend</ReportName>'
+        '<ReturnOnlyCompleteData>false</ReturnOnlyCompleteData>'
+        '<Aggregation>Daily</Aggregation>'
+        '<Columns>'
+        '<AccountPerformanceReportColumn>AccountName</AccountPerformanceReportColumn>'
+        '<AccountPerformanceReportColumn>AccountId</AccountPerformanceReportColumn>'
+        '<AccountPerformanceReportColumn>TimePeriod</AccountPerformanceReportColumn>'
+        '<AccountPerformanceReportColumn>Spend</AccountPerformanceReportColumn>'
+        '</Columns>'
+        '<Scope><AccountIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">'
+        f'{ids_xml}'
+        '</AccountIds></Scope>'
+        '<Time>'
+        f'<CustomDateRangeEnd><Day>{int(ep[2])}</Day><Month>{int(ep[1])}</Month><Year>{int(ep[0])}</Year></CustomDateRangeEnd>'
+        f'<CustomDateRangeStart><Day>{int(sp[2])}</Day><Month>{int(sp[1])}</Month><Year>{int(sp[0])}</Year></CustomDateRangeStart>'
+        '</Time></ReportRequest></SubmitGenerateReportRequest></s:Body></s:Envelope>'
+    )
+
+
+def _ms_build_poll_soap(token: str, report_id: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
+        '<s:Header xmlns="https://bingads.microsoft.com/Reporting/v13">'
+        f'<AuthenticationToken>{token}</AuthenticationToken>'
+        f'<DeveloperToken>{MICROSOFT_ADS_DEVELOPER_TOKEN}</DeveloperToken>'
+        '</s:Header><s:Body>'
+        '<PollGenerateReportRequest xmlns="https://bingads.microsoft.com/Reporting/v13">'
+        f'<ReportRequestId>{report_id}</ReportRequestId>'
+        '</PollGenerateReportRequest></s:Body></s:Envelope>'
+    )
+
+
+def _ms_none_results():
+    return {s["name"]: None for s in MICROSOFT_ADS_STORES}
+
+
+def fetch_ms_ads_spend(date_str: str) -> dict:
+    """Retourne {name: spend €} pour les comptes Microsoft Ads configurés sur 1 date.
+    date_str au format YYYY-MM-DD.
+    """
+    if not all([MICROSOFT_ADS_CLIENT_ID, MICROSOFT_ADS_REFRESH_TOKEN, MICROSOFT_ADS_DEVELOPER_TOKEN]):
+        log.warning("[MS Ads] Credentials manquants → skip")
+        return _ms_none_results()
+    if not MICROSOFT_ADS_STORES:
+        return {}
+
+    try:
+        token = get_ms_ads_access_token()
+        account_ids = [s["account_id"] for s in MICROSOFT_ADS_STORES]
+
+        # 1) Submit
+        soap_headers = {"Content-Type": "text/xml; charset=utf-8"}
+        r = requests.post(
+            MICROSOFT_ADS_REPORTING_URL,
+            headers={**soap_headers, "SOAPAction": "SubmitGenerateReport"},
+            data=_ms_build_submit_soap(token, account_ids, date_str, date_str).encode("utf-8"),
+            timeout=30,
+        )
+        if r.status_code != 200:
+            log.error(f"[MS Ads] SubmitReport {r.status_code} : {r.text[:300]}")
+            return _ms_none_results()
+        report_id = _ms_xml_val(r.text, "ReportRequestId")
+        if not report_id:
+            log.error(f"[MS Ads] ReportRequestId introuvable : {r.text[:300]}")
+            return _ms_none_results()
+        log.info(f"[MS Ads] Rapport soumis pour {date_str}, ID={report_id}")
+
+        # 2) Poll (jusqu'à 10 × 15s = 150s)
+        download_url = None
+        for i in range(10):
+            time.sleep(15)
+            pr = requests.post(
+                MICROSOFT_ADS_REPORTING_URL,
+                headers={**soap_headers, "SOAPAction": "PollGenerateReport"},
+                data=_ms_build_poll_soap(token, report_id).encode("utf-8"),
+                timeout=30,
+            )
+            if pr.status_code != 200:
+                log.info(f"[MS Ads] Poll HTTP {pr.status_code} — retry")
+                continue
+            status = _ms_xml_val(pr.text, "Status")
+            url    = _ms_xml_val(pr.text, "ReportDownloadUrl")
+            if status == "Success" and url:
+                download_url = url.replace("&amp;", "&")
+                break
+            if status == "Error":
+                log.error("[MS Ads] Erreur génération rapport")
+                return _ms_none_results()
+            log.info(f"[MS Ads] Rapport en cours ({status or 'pending'})...")
+        if not download_url:
+            log.error("[MS Ads] Timeout rapport après 150s")
+            return _ms_none_results()
+
+        # 3) Download + unzip + parse CSV
+        dr = requests.get(download_url, timeout=60)
+        if dr.status_code != 200:
+            log.error(f"[MS Ads] Download HTTP {dr.status_code}")
+            return _ms_none_results()
+        with zipfile.ZipFile(io.BytesIO(dr.content)) as z:
+            entries = z.namelist()
+            if not entries:
+                log.warning("[MS Ads] ZIP vide → 0")
+                return {s["name"]: 0.0 for s in MICROSOFT_ADS_STORES}
+            csv_text = z.read(entries[0]).decode("utf-8-sig", errors="replace")
+
+        lines = [l for l in csv_text.split("\n") if l.strip()]
+        header_idx = next((i for i, l in enumerate(lines) if "accountname" in l.lower()), -1)
+        if header_idx < 0:
+            log.warning("[MS Ads] Header CSV introuvable → 0")
+            return {s["name"]: 0.0 for s in MICROSOFT_ADS_STORES}
+        sep = "\t" if "\t" in lines[header_idx] else ","
+        hdr = [h.strip().strip('"').lower().replace(" ", "") for h in lines[header_idx].split(sep)]
+        idx_id    = hdr.index("accountid") if "accountid" in hdr else -1
+        idx_spend = hdr.index("spend")     if "spend"     in hdr else -1
+        if idx_id < 0 or idx_spend < 0:
+            log.error(f"[MS Ads] Colonnes AccountId/Spend introuvables : {hdr}")
+            return _ms_none_results()
+
+        spend_by_id = {}
+        for l in lines[header_idx + 1:]:
+            parts = [p.strip().strip('"') for p in l.split(sep)]
+            if len(parts) <= max(idx_id, idx_spend):
+                continue
+            acc_id = parts[idx_id]
+            try:
+                spend = float(parts[idx_spend] or 0)
+            except ValueError:
+                continue
+            spend_by_id[acc_id] = spend_by_id.get(acc_id, 0.0) + spend
+
+        results = {}
+        for s in MICROSOFT_ADS_STORES:
+            v = round(spend_by_id.get(s["account_id"], 0.0), 2)
+            results[s["name"]] = v
+            log.info(f"[MS Ads {s['name']}] Dépenses = {v} €")
+        return results
+
+    except Exception as e:
+        log.error(f"[MS Ads] Erreur : {e}")
+        return _ms_none_results()
+
+
+# =============================================================
 # GOOGLE SHEETS — Utilitaires
 # =============================================================
 
@@ -825,6 +1043,7 @@ def detect_missing_dates(max_days=5):
         ("gads",     SHEET_GADS),
         ("amazon",   SHEET_AMAZON),
         ("meta-ads", SHEET_META_ADS),
+        ("ms-ads",   SHEET_MS_ADS),
     ]
 
     try:
@@ -925,12 +1144,21 @@ def run_for_date(target_date, sheets_filter=None):
             log.info(f"  {name}: {val} €")
         write_report(SHEET_META_ADS, date_str, meta_ads_result, META_ADS_ORDER)
 
+    # ── Microsoft Ads (LFC) ──────────────────────────────────
+    if run_all or "ms-ads" in sheets_filter:
+        log.info(f"=== Microsoft Ads dépenses — {date_str} ===")
+        ms_ads_result = fetch_ms_ads_spend(date_api)
+        log.info("--- Résultats Microsoft Ads ---")
+        for name, val in ms_ads_result.items():
+            log.info(f"  {name}: {val} €")
+        write_report(SHEET_MS_ADS, date_str, ms_ads_result, MICROSOFT_ADS_ORDER)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Daily report → Google Sheets")
     parser.add_argument("--backfill", metavar="FROM", help="Rattrapage depuis une date (YYYY-MM-DD ou DD/MM/YYYY)")
     parser.add_argument("--to", metavar="TO", help="Date de fin pour le backfill (défaut : hier)")
-    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads,meta-ads (défaut : toutes)")
+    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads,meta-ads,ms-ads (défaut : toutes)")
     args = parser.parse_args()
 
     paris = ZoneInfo("Europe/Paris")
