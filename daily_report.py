@@ -100,12 +100,22 @@ AMAZON_ADS_CLIENT_SECRET = os.environ.get("AMAZON_ADS_CLIENT_SECRET", "") or AMA
 AMAZON_ADS_REFRESH_TOKEN = os.environ.get("AMAZON_ADS_REFRESH_TOKEN", "")
 AMAZON_ADS_API_BASE      = "https://advertising-api-eu.amazon.com"
 
-# Correspondance nom marketplace → countryCode Amazon Ads
-AMAZON_ADS_COUNTRY_MAP = {
-    "France": "FR", "Allemagne": "DE", "Belgique": "BE",
-    "Espagne": "ES", "Italie": "IT", "Pays-Bas": "NL",
-    "Suede": "SE", "Pologne": "PL",
-}
+# Comptes Amazon Ads suivis (le compte couvre 10 marketplaces, dont UK/IE
+# absents de la liste sales AMAZON_MARKETPLACES, et SE/PL/UK qui facturent
+# en SEK/PLN/GBP → conversion EUR via Frankfurter).
+AMAZON_ADS_MARKETPLACES = [
+    {"name": "France",      "country_code": "FR", "currency": "EUR"},
+    {"name": "Allemagne",   "country_code": "DE", "currency": "EUR"},
+    {"name": "Italie",      "country_code": "IT", "currency": "EUR"},
+    {"name": "Espagne",     "country_code": "ES", "currency": "EUR"},
+    {"name": "Pays-Bas",    "country_code": "NL", "currency": "EUR"},
+    {"name": "Belgique",    "country_code": "BE", "currency": "EUR"},
+    {"name": "Irlande",     "country_code": "IE", "currency": "EUR"},
+    {"name": "Royaume-Uni", "country_code": "UK", "currency": "GBP"},
+    {"name": "Suede",       "country_code": "SE", "currency": "SEK"},
+    {"name": "Pologne",     "country_code": "PL", "currency": "PLN"},
+]
+AMAZON_ADS_ORDER = [m["name"] for m in AMAZON_ADS_MARKETPLACES]
 
 # =============================================================
 # CONFIG META ADS (Facebook / Instagram)
@@ -536,42 +546,60 @@ def _poll_and_download_report(token, profile_id, report_id):
     return 0.0
 
 
-def fetch_amazon_ads_spend_for_profile(profile_id, date_str, marketplace_name):
-    """
-    Récupère les dépenses Amazon Ads (SP + SB + SD) pour un profil/marketplace.
-    date_str : format YYYY-MM-DD
+def fetch_amazon_ads_sp_spend(profile_id, date_str, marketplace_name):
+    """Sponsored Products spend pour un profil sur 1 date — en devise NATIVE
+    du compte (EUR pour la zone euro, SEK pour SE, PLN pour PL, GBP pour UK).
+    On ne fetch que SP : smiirl confirme que c'est la seule famille active
+    ("Only Sponsored Products — that's all you use").
     """
     token = get_amazon_ads_access_token()
+    rid = _create_ads_report(token, profile_id, "SPONSORED_PRODUCTS", "spCampaigns", date_str)
+    if not rid:
+        log.warning(f"[Amazon Ads {marketplace_name}] Pas de reportId")
+        return 0.0
+    try:
+        spend = _poll_and_download_report(token, profile_id, rid)
+    except Exception as e:
+        log.warning(f"[Amazon Ads {marketplace_name}] Download error : {e}")
+        return 0.0
+    return round(spend, 2)
 
-    # Créer les rapports pour chaque type de publicité
-    ad_types = [
-        ("SPONSORED_PRODUCTS", "spCampaigns"),
-        ("SPONSORED_BRANDS",   "sbCampaigns"),
-        ("SPONSORED_DISPLAY",  "sdCampaigns"),
-    ]
 
-    report_ids = []
-    for ad_product, report_type_id in ad_types:
-        rid = _create_ads_report(token, profile_id, ad_product, report_type_id, date_str)
-        if rid:
-            report_ids.append((ad_product, rid))
+# Cache FX (currency, date) → rate. Frankfurter renvoie les taux ECB ; pour
+# un weekend/jour férié il retourne le taux du dernier jour ouvré.
+_fx_cache = {}
 
-    # Polling et téléchargement des résultats
-    total_spend = 0.0
-    for ad_product, rid in report_ids:
-        try:
-            spend = _poll_and_download_report(token, profile_id, rid)
-            total_spend += spend
-        except Exception as e:
-            log.warning(f"[Amazon Ads {marketplace_name}] {ad_product} download error: {e}")
 
-    total_spend = round(total_spend, 2)
-    log.info(f"[Amazon Ads {marketplace_name}] Dépenses = {total_spend} €")
-    return total_spend
+def get_fx_rate_to_eur(currency: str, date_str: str):
+    """Retourne le taux 1 {currency} = X EUR pour la date donnée.
+    Renvoie None en cas d'échec (caller doit gérer)."""
+    if currency == "EUR":
+        return 1.0
+    key = (currency, date_str)
+    if key in _fx_cache:
+        return _fx_cache[key]
+    try:
+        r = requests.get(
+            f"https://api.frankfurter.dev/v1/{date_str}",
+            params={"base": currency, "symbols": "EUR"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            log.warning(f"[FX] {currency}→EUR {date_str} : HTTP {r.status_code}")
+            return None
+        rate = float(r.json()["rates"]["EUR"])
+        _fx_cache[key] = rate
+        log.info(f"[FX] 1 {currency} = {rate:.4f} EUR ({date_str})")
+        return rate
+    except Exception as e:
+        log.warning(f"[FX] {currency}→EUR {date_str} erreur : {e}")
+        return None
 
 
 def fetch_amazon_ads_spend(date_str):
-    """Retourne un dict {pays: spend} pour tous les marketplaces Amazon Ads."""
+    """Retourne {marketplace_name: spend EUR} pour les comptes Amazon Ads.
+    Convertit SEK / PLN / GBP en EUR via Frankfurter (taux ECB).
+    """
     if not AMAZON_ADS_REFRESH_TOKEN:
         log.warning("AMAZON_ADS_REFRESH_TOKEN non configuré → skip Amazon Ads")
         return {}
@@ -583,21 +611,40 @@ def fetch_amazon_ads_spend(date_str):
         return {}
 
     results = {}
-    for marketplace in AMAZON_MARKETPLACES:
-        name         = marketplace["name"]
-        country_code = AMAZON_ADS_COUNTRY_MAP.get(name)
-        profile_id   = profiles.get(country_code)
+    for m in AMAZON_ADS_MARKETPLACES:
+        name = m["name"]
+        cc   = m["country_code"]
+        cur  = m["currency"]
+        profile_id = profiles.get(cc)
 
         if not profile_id:
-            log.warning(f"[Amazon Ads {name}] Pas de profil trouvé pour {country_code}")
+            log.warning(f"[Amazon Ads {name}] Pas de profil pour countryCode={cc}")
             results[name] = 0.0
             continue
 
         try:
-            results[name] = fetch_amazon_ads_spend_for_profile(profile_id, date_str, name)
+            spend_native = fetch_amazon_ads_sp_spend(profile_id, date_str, name)
         except Exception as e:
-            log.error(f"[Amazon Ads {name}] Erreur : {e}")
+            log.error(f"[Amazon Ads {name}] Erreur fetch : {e}")
             results[name] = None
+            continue
+
+        if cur == "EUR":
+            results[name] = spend_native
+            log.info(f"[Amazon Ads {name}] Dépenses = {spend_native} €")
+        else:
+            if spend_native == 0:
+                results[name] = 0.0
+                log.info(f"[Amazon Ads {name}] Dépenses = 0 {cur} (skip FX)")
+                continue
+            rate = get_fx_rate_to_eur(cur, date_str)
+            if rate is None:
+                log.error(f"[Amazon Ads {name}] FX {cur}→EUR indispo → valeur non écrite")
+                results[name] = None
+            else:
+                eur = round(spend_native * rate, 2)
+                results[name] = eur
+                log.info(f"[Amazon Ads {name}] {spend_native:.2f} {cur} × {rate:.4f} = {eur} €")
 
     return results
 
@@ -1133,7 +1180,7 @@ def run_for_date(target_date, sheets_filter=None):
             log.info("--- Résultats Amazon Ads ---")
             for name, val in amazon_ads_result.items():
                 log.info(f"  {name}: {val} €")
-            write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_MARKETPLACE_ORDER)
+            write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_ADS_ORDER)
 
     # ── Meta Ads (LFC + COCO) ────────────────────────────────
     if run_all or "meta-ads" in sheets_filter:
