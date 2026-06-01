@@ -4,6 +4,7 @@ CA HT J-1 par boutique Shopify → Google Sheets (feuille "REPORT SHOPIFY VENTES
 Dépenses Google Ads J-1 par boutique → Google Sheets (feuille "REPORT GOOGLE ADS")
 CA HT J-1 par pays Amazon → Google Sheets (feuille "REPORT AMAZON VENTES")
 Dépenses Amazon Ads J-1 par pays → Google Sheets (feuille "REPORT AMAZON ADS")
+Dépenses Meta Ads J-1 (LFC + COCO) → Google Sheets (feuille "REPORT META ADS")
 """
 
 import os
@@ -103,6 +104,20 @@ AMAZON_ADS_COUNTRY_MAP = {
 }
 
 # =============================================================
+# CONFIG META ADS (Facebook / Instagram)
+# =============================================================
+META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
+META_API_VERSION  = "v21.0"
+META_API_BASE     = f"https://graph.facebook.com/{META_API_VERSION}"
+
+# Comptes pubs Meta suivis dans le daily report (label = nom de ligne dans Google Sheets)
+META_ADS_STORES = [
+    {"name": "LFC",  "account_id": "act_846038955950234"},
+    {"name": "COCO", "account_id": "act_817405970328905"},
+]
+META_ADS_ORDER = [s["name"] for s in META_ADS_STORES]
+
+# =============================================================
 # CONFIG GOOGLE SHEETS
 # =============================================================
 SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
@@ -111,6 +126,7 @@ SHEET_SHOPIFY    = "REPORT SHOPIFY VENTES"
 SHEET_GADS       = "REPORT GOOGLE ADS"
 SHEET_AMAZON     = "REPORT AMAZON VENTES"
 SHEET_AMAZON_ADS = "REPORT AMAZON ADS"
+SHEET_META_ADS   = "REPORT META ADS"
 
 SERVICE_ACCOUNT_EMAIL = os.environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL", "")
 PRIVATE_KEY           = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
@@ -566,6 +582,68 @@ def fetch_amazon_ads_spend(date_str):
 
 
 # =============================================================
+# META ADS — Récupération des dépenses publicitaires
+# =============================================================
+
+def fetch_meta_ads_spend(account_id: str, date_str: str) -> float:
+    """Retourne les dépenses du jour (en €, devise du compte) pour un compte pub Meta.
+    Endpoint : Graph API /{account_id}/insights, level=account, time_increment=1.
+    date_str au format YYYY-MM-DD.
+    """
+    if not META_ACCESS_TOKEN:
+        log.warning(f"[Meta {account_id}] META_ACCESS_TOKEN absent → 0")
+        return 0.0
+
+    params = {
+        "fields":         "spend",
+        "level":          "account",
+        "time_increment": 1,
+        "time_range":     json_mod.dumps({"since": date_str, "until": date_str}),
+        "access_token":   META_ACCESS_TOKEN,
+    }
+
+    for attempt in range(5):
+        try:
+            r = requests.get(f"{META_API_BASE}/{account_id}/insights", params=params, timeout=20)
+        except requests.RequestException as e:
+            log.error(f"[Meta {account_id}] Exception réseau : {e}")
+            return None
+
+        if r.status_code == 200:
+            rows = r.json().get("data", [])
+            spend = round(sum(float(x.get("spend", 0) or 0) for x in rows), 2)
+            log.info(f"[Meta {account_id}] Dépenses = {spend} €")
+            return spend
+
+        body = r.text[:200]
+        # Meta renvoie souvent 400 + "User request limit reached" pour le throttle
+        is_rate_limited = (
+            r.status_code == 429
+            or "User request limit reached" in body
+            or "too many calls" in body
+        )
+        if is_rate_limited:
+            wait = min(2 ** attempt * 10, 60)
+            log.info(f"[Meta {account_id}] Rate limit — pause {wait}s")
+            time.sleep(wait)
+            continue
+
+        log.error(f"[Meta {account_id}] API {r.status_code} : {body}")
+        return None
+
+    log.error(f"[Meta {account_id}] Abandon après 5 tentatives rate-limit")
+    return None
+
+
+def fetch_meta_ads_spend_all(date_str: str) -> dict:
+    """Retourne {name: spend €} pour tous les comptes Meta configurés."""
+    results = {}
+    for store in META_ADS_STORES:
+        results[store["name"]] = fetch_meta_ads_spend(store["account_id"], date_str)
+    return results
+
+
+# =============================================================
 # GOOGLE SHEETS — Utilitaires
 # =============================================================
 
@@ -591,6 +669,21 @@ def col_letter(n):
     return result
 
 
+def ensure_sheet_tab(sheet_name: str) -> None:
+    """Crée l'onglet sheet_name dans le spreadsheet s'il n'existe pas."""
+    svc    = get_sheets_service()
+    sheets = svc.spreadsheets()
+    meta   = sheets.get(spreadsheetId=SHEET_ID, fields="sheets.properties.title").execute()
+    titles = {s["properties"]["title"] for s in meta.get("sheets", [])}
+    if sheet_name in titles:
+        return
+    log.info(f"[{sheet_name}] Onglet absent → création")
+    sheets.batchUpdate(
+        spreadsheetId=SHEET_ID,
+        body={"requests": [{"addSheet": {"properties": {"title": sheet_name}}}]},
+    ).execute()
+
+
 def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_order: list):
     """
     Fonction générique — écrit un rapport dans la feuille sheet_name.
@@ -598,6 +691,7 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     Ajoute automatiquement les nouvelles lignes si un nouveau nom apparaît.
     Idempotente : ne réécrit pas si la date existe déjà.
     """
+    ensure_sheet_tab(sheet_name)
     svc    = get_sheets_service()
     sheets = svc.spreadsheets()
 
@@ -727,9 +821,10 @@ def detect_missing_dates(max_days=5):
 
     # Feuilles à vérifier : (clé sheets_filter, nom feuille Google Sheets)
     sheet_checks = [
-        ("shopify", SHEET_SHOPIFY),
-        ("gads",    SHEET_GADS),
-        ("amazon",  SHEET_AMAZON),
+        ("shopify",  SHEET_SHOPIFY),
+        ("gads",     SHEET_GADS),
+        ("amazon",   SHEET_AMAZON),
+        ("meta-ads", SHEET_META_ADS),
     ]
 
     try:
@@ -821,12 +916,21 @@ def run_for_date(target_date, sheets_filter=None):
                 log.info(f"  {name}: {val} €")
             write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_MARKETPLACE_ORDER)
 
+    # ── Meta Ads (LFC + COCO) ────────────────────────────────
+    if run_all or "meta-ads" in sheets_filter:
+        log.info(f"=== Meta Ads dépenses — {date_str} ===")
+        meta_ads_result = fetch_meta_ads_spend_all(date_api)
+        log.info("--- Résultats Meta Ads ---")
+        for name, val in meta_ads_result.items():
+            log.info(f"  {name}: {val} €")
+        write_report(SHEET_META_ADS, date_str, meta_ads_result, META_ADS_ORDER)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Daily report → Google Sheets")
     parser.add_argument("--backfill", metavar="FROM", help="Rattrapage depuis une date (YYYY-MM-DD ou DD/MM/YYYY)")
     parser.add_argument("--to", metavar="TO", help="Date de fin pour le backfill (défaut : hier)")
-    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads (défaut : toutes)")
+    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads,meta-ads (défaut : toutes)")
     args = parser.parse_args()
 
     paris = ZoneInfo("Europe/Paris")
