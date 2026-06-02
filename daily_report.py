@@ -960,6 +960,17 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     svc    = get_sheets_service()
     sheets = svc.spreadsheets()
 
+    # On récupère le sheetId numérique + gridProperties dès le début, utilisé
+    # plus loin pour batchUpdate (insertion de ligne / extension colonnes).
+    sheet_meta = sheets.get(spreadsheetId=SHEET_ID, fields="sheets.properties").execute()
+    sheet_id     = None
+    current_cols = None
+    for s in sheet_meta.get("sheets", []):
+        if s["properties"]["title"] == sheet_name:
+            sheet_id     = s["properties"]["sheetId"]
+            current_cols = s["properties"]["gridProperties"]["columnCount"]
+            break
+
     # Lecture colonne A (noms existants)
     col_a = sheets.values().get(
         spreadsheetId=SHEET_ID,
@@ -980,16 +991,32 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
         ).execute()
         existing_names = ["Boutique"] + row_order + ["TOTAL"]
 
-    # Ajoute les nouveaux noms manquants (avant TOTAL)
+    # Ajoute les nouveaux noms manquants (avant TOTAL). On utilise batchUpdate
+    # + insertDimension (la méthode .values().insert() n'existe pas dans l'API
+    # Sheets v4 — c'est .values().append() qui prend insertDataOption, mais
+    # append ajoute à la fin et casserait la position de la ligne TOTAL).
     total_row_idx = next((i for i, n in enumerate(existing_names) if n.strip().upper() == "TOTAL"), len(existing_names))
     for name in row_order:
         if name not in existing_names:
-            log.info(f"[{sheet_name}] Nouveau pays/boutique détecté : {name} → ajout")
-            sheets.values().insert(
+            log.info(f"[{sheet_name}] Nouveau label détecté : {name} → insert ligne {total_row_idx + 1}")
+            sheets.batchUpdate(
+                spreadsheetId=SHEET_ID,
+                body={"requests": [{
+                    "insertDimension": {
+                        "range": {
+                            "sheetId":    sheet_id,
+                            "dimension":  "ROWS",
+                            "startIndex": total_row_idx,
+                            "endIndex":   total_row_idx + 1,
+                        },
+                        "inheritFromBefore": False,
+                    }
+                }]},
+            ).execute()
+            sheets.values().update(
                 spreadsheetId=SHEET_ID,
                 range=f"'{sheet_name}'!A{total_row_idx + 1}",
                 valueInputOption="RAW",
-                insertDataOption="INSERT_ROWS",
                 body={"values": [[name]]},
             ).execute()
             existing_names.insert(total_row_idx, name)
@@ -1017,28 +1044,19 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     log.info(f"[{sheet_name}] Écriture dans la colonne {col}")
 
     # Agrandir la feuille si la colonne dépasse la taille actuelle
-    sheet_meta = sheets.get(
-        spreadsheetId=SHEET_ID,
-        fields="sheets.properties"
-    ).execute()
-    for s in sheet_meta.get("sheets", []):
-        if s["properties"]["title"] == sheet_name:
-            current_cols = s["properties"]["gridProperties"]["columnCount"]
-            sheet_id     = s["properties"]["sheetId"]
-            if new_col >= current_cols:
-                cols_to_add = new_col - current_cols + 1
-                log.info(f"[{sheet_name}] Ajout de {cols_to_add} colonne(s) (limite atteinte)")
-                sheets.batchUpdate(
-                    spreadsheetId=SHEET_ID,
-                    body={"requests": [{
-                        "appendDimension": {
-                            "sheetId":   sheet_id,
-                            "dimension": "COLUMNS",
-                            "length":    cols_to_add,
-                        }
-                    }]}
-                ).execute()
-            break
+    if current_cols is not None and new_col >= current_cols:
+        cols_to_add = new_col - current_cols + 1
+        log.info(f"[{sheet_name}] Ajout de {cols_to_add} colonne(s) (limite atteinte)")
+        sheets.batchUpdate(
+            spreadsheetId=SHEET_ID,
+            body={"requests": [{
+                "appendDimension": {
+                    "sheetId":   sheet_id,
+                    "dimension": "COLUMNS",
+                    "length":    cols_to_add,
+                }
+            }]}
+        ).execute()
 
     # Relit colonne A pour avoir l'ordre final
     col_a = sheets.values().get(
