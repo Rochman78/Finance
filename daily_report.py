@@ -521,8 +521,13 @@ def _poll_and_download_report(token, profile_id, report_id):
         "Amazon-Advertising-API-ClientId": AMAZON_ADS_CLIENT_ID,
         "Amazon-Advertising-API-Scope": profile_id,
     }
-    for attempt in range(20):
-        time.sleep(min(2 + attempt * 2, 15))
+    # Polling budget : 40 tentatives × backoff 8→20s = ~12 min max.
+    # Amazon Ads est régulièrement lent le matin (rapports qui restent
+    # PENDING 5-10 min), un timeout court écrivait 0 € à tort.
+    # Retourne None (et pas 0.0) quand on n'a pas pu télécharger un rapport :
+    # le caller saura distinguer "aucune dépense" vs "API timeout/error".
+    for attempt in range(40):
+        time.sleep(min(8 + attempt, 20))
         resp = requests.get(
             f"{AMAZON_ADS_API_BASE}/reporting/reports/{report_id}",
             headers=headers,
@@ -535,15 +540,15 @@ def _poll_and_download_report(token, profile_id, report_id):
         if status == "COMPLETED":
             url = data.get("url")
             if not url:
-                return 0.0
+                return None
             dl = requests.get(url, timeout=30)
             if dl.status_code != 200:
-                return 0.0
+                return None
             rows = json_mod.loads(gzip.decompress(dl.content))
             return sum(float(r.get("spend", 0) or r.get("cost", 0) or 0) for r in rows)
-        elif status == "FAILED":
-            return 0.0
-    return 0.0
+        elif status in ("FAILED", "FAILURE"):
+            return None
+    return None
 
 
 def fetch_amazon_ads_sp_spend(profile_id, date_str, marketplace_name):
@@ -556,12 +561,15 @@ def fetch_amazon_ads_sp_spend(profile_id, date_str, marketplace_name):
     rid = _create_ads_report(token, profile_id, "SPONSORED_PRODUCTS", "spCampaigns", date_str)
     if not rid:
         log.warning(f"[Amazon Ads {marketplace_name}] Pas de reportId")
-        return 0.0
+        return None
     try:
         spend = _poll_and_download_report(token, profile_id, rid)
     except Exception as e:
         log.warning(f"[Amazon Ads {marketplace_name}] Download error : {e}")
-        return 0.0
+        return None
+    if spend is None:
+        log.warning(f"[Amazon Ads {marketplace_name}] Timeout polling Amazon Ads")
+        return None
     return round(spend, 2)
 
 
@@ -629,14 +637,19 @@ def fetch_amazon_ads_spend(date_str):
             results[name] = None
             continue
 
-        if cur == "EUR":
+        if spend_native is None:
+            # Polling/download a échoué : on n'écrit PAS 0 (qui était trompeur),
+            # on laisse la cellule vide pour que l'auto-backfill du lendemain
+            # rattrape la valeur réelle.
+            log.warning(f"[Amazon Ads {name}] Aucune valeur fiable → cellule vide")
+            results[name] = None
+        elif cur == "EUR":
             results[name] = spend_native
             log.info(f"[Amazon Ads {name}] Dépenses = {spend_native} €")
+        elif spend_native == 0:
+            results[name] = 0.0
+            log.info(f"[Amazon Ads {name}] Dépenses = 0 {cur} (skip FX)")
         else:
-            if spend_native == 0:
-                results[name] = 0.0
-                log.info(f"[Amazon Ads {name}] Dépenses = 0 {cur} (skip FX)")
-                continue
             rate = get_fx_rate_to_eur(cur, date_str)
             if rate is None:
                 log.error(f"[Amazon Ads {name}] FX {cur}→EUR indispo → valeur non écrite")
@@ -1104,11 +1117,12 @@ def detect_missing_dates(max_days=5):
 
     # Feuilles à vérifier : (clé sheets_filter, nom feuille Google Sheets)
     sheet_checks = [
-        ("shopify",  SHEET_SHOPIFY),
-        ("gads",     SHEET_GADS),
-        ("amazon",   SHEET_AMAZON),
-        ("meta-ads", SHEET_META_ADS),
-        ("ms-ads",   SHEET_MS_ADS),
+        ("shopify",    SHEET_SHOPIFY),
+        ("gads",       SHEET_GADS),
+        ("amazon",     SHEET_AMAZON),
+        ("amazon-ads", SHEET_AMAZON_ADS),
+        ("meta-ads",   SHEET_META_ADS),
+        ("ms-ads",     SHEET_MS_ADS),
     ]
 
     try:
