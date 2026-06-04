@@ -128,6 +128,46 @@ ADS_REFETCH_LOOKBACK = 3       # nombre de jours à re-fetcher (J-1 inclus)
 AD_SHEET_KEYS = {"gads", "amazon-ads", "meta-ads", "ms-ads"}
 
 # =============================================================
+# CONFIG TELEGRAM (alertes de run)
+# =============================================================
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# File d'alertes accumulées pendant le run ; envoyée en fin de main()
+_telegram_alerts = []
+
+
+def telegram_alert(message: str) -> None:
+    """Queue un message à envoyer en fin de run."""
+    _telegram_alerts.append(message)
+
+
+def flush_telegram_alerts() -> None:
+    """Envoie tous les alerts accumulés en un seul message Telegram."""
+    if not _telegram_alerts:
+        return
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        log.warning(f"Telegram non configuré → {len(_telegram_alerts)} alerte(s) non envoyée(s)")
+        return
+    header = f"⚠️ Daily report — {len(_telegram_alerts)} anomalie(s)"
+    body   = "\n".join(_telegram_alerts[:30])  # cap à 30 lignes pour rester sous 4096 chars
+    if len(_telegram_alerts) > 30:
+        body += f"\n... +{len(_telegram_alerts) - 30} autres."
+    text = f"{header}\n\n{body}"
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text[:4000]},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            log.error(f"Telegram HTTP {r.status_code}: {r.text[:200]}")
+        else:
+            log.info(f"✅ {len(_telegram_alerts)} alerte(s) Telegram envoyée(s)")
+    except Exception as e:
+        log.error(f"Erreur envoi Telegram : {e}")
+
+# =============================================================
 # CONFIG META ADS (Facebook / Instagram)
 # =============================================================
 META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
@@ -1101,15 +1141,45 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     final_names = [row[0].strip() if row else "" for row in col_a]
     total_row   = next((i + 1 for i, n in enumerate(final_names) if n.strip().upper() == "TOTAL"), len(final_names) + 1)
 
+    # Si on est en force_overwrite avec une colonne existante, on lit les
+    # cellules actuelles pour pouvoir préserver les valeurs déjà bonnes en
+    # cas de None dans le re-fetch (évite de régresser une bonne valeur en 0).
+    existing_col_values = []
+    if force_overwrite and existing_date_col is not None:
+        try:
+            existing_col_values = sheets.values().get(
+                spreadsheetId=SHEET_ID,
+                range=f"'{sheet_name}'!{col}2:{col}{total_row - 1}",
+            ).execute().get("values", [])
+            existing_col_values = [(r[0] if r else None) for r in existing_col_values]
+        except Exception as e:
+            log.warning(f"[{sheet_name}] Impossible de relire colonne {col} : {e}")
+            existing_col_values = []
+
     # Construit les valeurs dans l'ordre des lignes du sheet.
-    # Règle : si on a traité un label (= il est dans results_by_name) mais qu'on
-    # n'a pas pu récupérer de valeur (None), on écrit 0 plutôt que cellule vide,
-    # pour que le TOTAL reste cohérent et qu'on n'aie pas de trous visuels.
-    # Les valeurs réelles 0.0 (= "aucune dépense ce jour-là") restent inchangées.
+    # Règles :
+    #  - Si valeur fetch OK → on l'écrit.
+    #  - Si valeur fetch None ET force_overwrite ET cellule existante non vide
+    #    et non-zero → on PRÉSERVE l'ancienne (et on queue un alert Telegram).
+    #  - Sinon (premier write OU pas de valeur antérieure utile) → on écrit 0.
     values = [[date_str]]
-    for name in final_names[1:total_row - 1]:  # ignore "Boutique" et "TOTAL"
+    name_list = final_names[1:total_row - 1]  # ignore "Boutique" et "TOTAL"
+    for i, name in enumerate(name_list):
         v = results_by_name.get(name)
-        values.append([v if v is not None else 0])
+        if v is not None:
+            values.append([v])
+            continue
+        existing = existing_col_values[i] if i < len(existing_col_values) else None
+        try:
+            existing_num = float(str(existing).replace(",", ".")) if existing not in (None, "", "0", 0) else None
+        except (TypeError, ValueError):
+            existing_num = None
+        if force_overwrite and existing_num is not None:
+            values.append([existing])
+            telegram_alert(f"• {sheet_name} / {date_str} / {name} : fetch a échoué → valeur préservée ({existing})")
+            log.warning(f"[{sheet_name}] {date_str} / {name} : fetch None → préservé {existing}")
+        else:
+            values.append([0])
 
     sheets.values().update(
         spreadsheetId=SHEET_ID,
@@ -1328,6 +1398,7 @@ def main():
                 run_for_date(d, ads_to_refetch, force_overwrite=True)
 
     log.info("=== Terminé ===")
+    flush_telegram_alerts()
 
 
 if __name__ == "__main__":
