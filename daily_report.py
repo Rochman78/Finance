@@ -1079,11 +1079,15 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     final_names = [row[0].strip() if row else "" for row in col_a]
     total_row   = next((i + 1 for i, n in enumerate(final_names) if n.strip().upper() == "TOTAL"), len(final_names) + 1)
 
-    # Construit les valeurs dans l'ordre des lignes du sheet
+    # Construit les valeurs dans l'ordre des lignes du sheet.
+    # Règle : si on a traité un label (= il est dans results_by_name) mais qu'on
+    # n'a pas pu récupérer de valeur (None), on écrit 0 plutôt que cellule vide,
+    # pour que le TOTAL reste cohérent et qu'on n'aie pas de trous visuels.
+    # Les valeurs réelles 0.0 (= "aucune dépense ce jour-là") restent inchangées.
     values = [[date_str]]
     for name in final_names[1:total_row - 1]:  # ignore "Boutique" et "TOTAL"
         v = results_by_name.get(name)
-        values.append([v if v is not None else ""])
+        values.append([v if v is not None else 0])
 
     sheets.values().update(
         spreadsheetId=SHEET_ID,
