@@ -118,6 +118,16 @@ AMAZON_ADS_MARKETPLACES = [
 AMAZON_ADS_ORDER = [m["name"] for m in AMAZON_ADS_MARKETPLACES]
 
 # =============================================================
+# RE-FETCH ATTRIBUTION (ads — Google / Amazon / Meta / Microsoft)
+# =============================================================
+# Les régies pubs ré-ajustent leurs chiffres pendant ~48-72h après la fin
+# du jour (attribution des conversions, delivery tardive, fraud filter…).
+# Pour suivre ces ajustements, on re-fetch les N derniers jours à chaque
+# run cron (3 runs/jour = matin/midi/soir). Le run d'après écrase la cellule.
+ADS_REFETCH_LOOKBACK = 3       # nombre de jours à re-fetcher (J-1 inclus)
+AD_SHEET_KEYS = {"gads", "amazon-ads", "meta-ads", "ms-ads"}
+
+# =============================================================
 # CONFIG META ADS (Facebook / Instagram)
 # =============================================================
 META_ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
@@ -962,12 +972,15 @@ def ensure_sheet_tab(sheet_name: str) -> None:
     ).execute()
 
 
-def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_order: list):
+def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_order: list,
+                 force_overwrite: bool = False):
     """
     Fonction générique — écrit un rapport dans la feuille sheet_name.
     Structure : ligne 1 = dates, colonne A = noms, dernière ligne = TOTAL.
     Ajoute automatiquement les nouvelles lignes si un nouveau nom apparaît.
-    Idempotente : ne réécrit pas si la date existe déjà.
+    Idempotente par défaut : ne réécrit pas si la date existe déjà.
+    Si force_overwrite=True : écrase la colonne existante (utilisé par le
+    re-fetch attribution pour les ads).
     """
     ensure_sheet_tab(sheet_name)
     svc    = get_sheets_service()
@@ -1044,17 +1057,26 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
     anchor_col = next((i for i, c in enumerate(row1) if str(c).strip().lower() == "boutique"), 0)
 
     last_date_col = anchor_col
+    existing_date_col = None
     for i in range(anchor_col + 1, len(row1)):
         cell = str(row1[i]).strip()
         if cell:
             if cell == date_str:
+                if force_overwrite:
+                    existing_date_col = i
+                    break
                 log.info(f"[{sheet_name}] Date {date_str} déjà présente → rien à faire")
                 return
             last_date_col = i
 
-    new_col = last_date_col + 1
-    col     = col_letter(new_col)
-    log.info(f"[{sheet_name}] Écriture dans la colonne {col}")
+    if existing_date_col is not None:
+        new_col = existing_date_col
+        col     = col_letter(new_col)
+        log.info(f"[{sheet_name}] Re-fetch : écrasement colonne {col} ({date_str})")
+    else:
+        new_col = last_date_col + 1
+        col     = col_letter(new_col)
+        log.info(f"[{sheet_name}] Écriture dans la colonne {col}")
 
     # Agrandir la feuille si la colonne dépasse la taille actuelle
     if current_cols is not None and new_col >= current_cols:
@@ -1164,8 +1186,9 @@ def detect_missing_dates(max_days=5):
 # POINT D'ENTRÉE
 # =============================================================
 
-def run_for_date(target_date, sheets_filter=None):
-    """Exécute le report pour une date donnée. sheets_filter : set de noms de feuilles à traiter, ou None = toutes."""
+def run_for_date(target_date, sheets_filter=None, force_overwrite=False):
+    """Exécute le report pour une date donnée. sheets_filter : set de noms de feuilles à traiter, ou None = toutes.
+    force_overwrite : si True, réécrit la colonne même si la date existe déjà (utilisé par le re-fetch attribution)."""
     paris    = ZoneInfo("Europe/Paris")
     day      = target_date if isinstance(target_date, datetime) else datetime(target_date.year, target_date.month, target_date.day, tzinfo=paris)
     date_str = day.strftime("%d/%m/%Y")
@@ -1185,7 +1208,7 @@ def run_for_date(target_date, sheets_filter=None):
         log.info("--- Résultats Shopify ---")
         for name, val in shopify_result.items():
             log.info(f"  {name}: {val}")
-        write_report(SHEET_SHOPIFY, date_str, shopify_result, STORE_ORDER)
+        write_report(SHEET_SHOPIFY, date_str, shopify_result, STORE_ORDER, force_overwrite=force_overwrite)
 
     # ── Google Ads ───────────────────────────────────────────
     if run_all or "gads" in sheets_filter:
@@ -1197,7 +1220,7 @@ def run_for_date(target_date, sheets_filter=None):
         log.info("--- Résultats Google Ads ---")
         for name, val in gads_result.items():
             log.info(f"  {name}: {val} €")
-        write_report(SHEET_GADS, date_str, gads_result, STORE_ORDER)
+        write_report(SHEET_GADS, date_str, gads_result, STORE_ORDER, force_overwrite=force_overwrite)
 
     # ── Amazon ───────────────────────────────────────────────
     if run_all or "amazon" in sheets_filter:
@@ -1206,7 +1229,7 @@ def run_for_date(target_date, sheets_filter=None):
         log.info("--- Résultats Amazon ---")
         for name, val in amazon_result.items():
             log.info(f"  {name}: {val} €")
-        write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER)
+        write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER, force_overwrite=force_overwrite)
 
     # ── Amazon Ads ────────────────────────────────────────────
     if run_all or "amazon-ads" in sheets_filter:
@@ -1216,7 +1239,7 @@ def run_for_date(target_date, sheets_filter=None):
             log.info("--- Résultats Amazon Ads ---")
             for name, val in amazon_ads_result.items():
                 log.info(f"  {name}: {val} €")
-            write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_ADS_ORDER)
+            write_report(SHEET_AMAZON_ADS, date_str, amazon_ads_result, AMAZON_ADS_ORDER, force_overwrite=force_overwrite)
 
     # ── Meta Ads (LFC + COCO) ────────────────────────────────
     if run_all or "meta-ads" in sheets_filter:
@@ -1225,7 +1248,7 @@ def run_for_date(target_date, sheets_filter=None):
         log.info("--- Résultats Meta Ads ---")
         for name, val in meta_ads_result.items():
             log.info(f"  {name}: {val} €")
-        write_report(SHEET_META_ADS, date_str, meta_ads_result, META_ADS_ORDER)
+        write_report(SHEET_META_ADS, date_str, meta_ads_result, META_ADS_ORDER, force_overwrite=force_overwrite)
 
     # ── Microsoft Ads (LFC) ──────────────────────────────────
     if run_all or "ms-ads" in sheets_filter:
@@ -1234,7 +1257,7 @@ def run_for_date(target_date, sheets_filter=None):
         log.info("--- Résultats Microsoft Ads ---")
         for name, val in ms_ads_result.items():
             log.info(f"  {name}: {val} €")
-        write_report(SHEET_MS_ADS, date_str, ms_ads_result, MICROSOFT_ADS_ORDER)
+        write_report(SHEET_MS_ADS, date_str, ms_ads_result, MICROSOFT_ADS_ORDER, force_overwrite=force_overwrite)
 
 
 def main():
@@ -1288,6 +1311,21 @@ def main():
 
         yesterday = datetime.now(paris) - timedelta(days=1)
         run_for_date(yesterday, sheets_filter)
+
+        # Re-fetch attribution : pour les ads, on re-fetche les ADS_REFETCH_LOOKBACK
+        # derniers jours (J-1 inclus) avec force_overwrite=True. Ça permet de
+        # capturer les ajustements de Meta/Amazon/Google/Microsoft Ads qui
+        # continuent à arriver pendant 24-72h après chaque jour. Activé sur les
+        # runs cron multi-passes (matin/midi/soir).
+        ads_to_refetch = AD_SHEET_KEYS if sheets_filter is None else (sheets_filter & AD_SHEET_KEYS)
+        if ads_to_refetch:
+            log.info(f"\n{'='*50}")
+            log.info(f"=== RE-FETCH ATTRIBUTION : {ADS_REFETCH_LOOKBACK} derniers jours pour {sorted(ads_to_refetch)} ===")
+            log.info(f"{'='*50}")
+            for d_offset in range(1, ADS_REFETCH_LOOKBACK + 1):
+                d = (datetime.now(paris) - timedelta(days=d_offset)).date()
+                log.info(f"\n>>> Re-fetch : {d.strftime('%d/%m/%Y')}")
+                run_for_date(d, ads_to_refetch, force_overwrite=True)
 
     log.info("=== Terminé ===")
 
