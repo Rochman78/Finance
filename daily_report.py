@@ -6,6 +6,7 @@ CA HT J-1 par pays Amazon → Google Sheets (feuille "REPORT AMAZON VENTES")
 Dépenses Amazon Ads J-1 par pays → Google Sheets (feuille "REPORT AMAZON ADS")
 Dépenses Meta Ads J-1 (LFC + COCO) → Google Sheets (feuille "REPORT META ADS")
 Dépenses Microsoft Ads J-1 (LFC) → Google Sheets (feuille "REPORT MICROSOFT ADS")
+CA HT J-1 Cdiscount (marketplace via Octopia) → Google Sheets (feuille "REPORT CDISCOUNT VENTES")
 """
 
 import os
@@ -198,6 +199,19 @@ MICROSOFT_ADS_STORES = [
 MICROSOFT_ADS_ORDER = [s["name"] for s in MICROSOFT_ADS_STORES]
 
 # =============================================================
+# CONFIG CDISCOUNT (Octopia Seller API — compte ventes uniquement,
+# l'autre compte OCTOPIA est utilisé pour la logistique fulfillment)
+# =============================================================
+OCTOPIA_CLIENT_ID     = os.environ.get("OCTOPIA_CLIENT_ID", "")
+OCTOPIA_CLIENT_SECRET = os.environ.get("OCTOPIA_CLIENT_SECRET", "")
+OCTOPIA_SELLER_ID     = os.environ.get("OCTOPIA_SELLER_ID", "")
+OCTOPIA_AUTH_URL      = "https://auth.octopia-io.net/auth/realms/maas/protocol/openid-connect/token"
+OCTOPIA_API_BASE      = "https://api.octopia-io.net/seller/v2"
+OCTOPIA_VAT_RATE      = 0.20  # FR TVA standard (channel CDISFR)
+
+CDISCOUNT_ORDER = ["Cdiscount"]
+
+# =============================================================
 # CONFIG GOOGLE SHEETS
 # =============================================================
 SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
@@ -208,6 +222,7 @@ SHEET_AMAZON     = "REPORT AMAZON VENTES"
 SHEET_AMAZON_ADS = "REPORT AMAZON ADS"
 SHEET_META_ADS   = "REPORT META ADS"
 SHEET_MS_ADS     = "REPORT MICROSOFT ADS"
+SHEET_CDISCOUNT  = "REPORT CDISCOUNT VENTES"
 
 SERVICE_ACCOUNT_EMAIL = os.environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL", "")
 PRIVATE_KEY           = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
@@ -972,6 +987,116 @@ def fetch_ms_ads_spend(date_str: str) -> dict:
 
 
 # =============================================================
+# CDISCOUNT (Octopia Seller API) — CA HT par jour
+# =============================================================
+# OAuth2 client_credentials (token TTL 2h, cache local). Endpoint /orders
+# paginé via pageIndex/pageSize. totalPrice.sellingPrice = TTC client.
+# On exclut les statuts annulés/refusés. Conversion HT via TVA 20% (CDISFR).
+
+_octopia_token_cache = {"token": None, "expires_at": 0}
+
+
+def get_octopia_token() -> str:
+    now = time.time()
+    if _octopia_token_cache["token"] and now < _octopia_token_cache["expires_at"]:
+        return _octopia_token_cache["token"]
+    resp = requests.post(
+        OCTOPIA_AUTH_URL,
+        data={"grant_type":"client_credentials","client_id":OCTOPIA_CLIENT_ID,"client_secret":OCTOPIA_CLIENT_SECRET},
+        headers={"Content-Type":"application/x-www-form-urlencoded"},
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"Octopia auth {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    _octopia_token_cache["token"] = data["access_token"]
+    _octopia_token_cache["expires_at"] = now + data.get("expires_in", 7200) - 300
+    log.info("  Token Octopia OK")
+    return _octopia_token_cache["token"]
+
+
+def fetch_cdiscount_ca_ht(date_str: str):
+    """Retourne le CA HT Cdiscount sur une journée (en €).
+    date_str : YYYY-MM-DD. Renvoie None en cas d'erreur API."""
+    if not all([OCTOPIA_CLIENT_ID, OCTOPIA_CLIENT_SECRET, OCTOPIA_SELLER_ID]):
+        log.warning("[Cdiscount] Credentials OCTOPIA_* manquants → skip")
+        return None
+
+    try:
+        token = get_octopia_token()
+    except Exception as e:
+        log.error(f"[Cdiscount] Auth error : {e}")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "sellerId":      OCTOPIA_SELLER_ID,
+        "Accept":        "application/json",
+    }
+    # Exclure les commandes annulées/refusées : leur sellingPrice est encore
+    # présent mais elles n'ont rien rapporté. On accepte les "InPreparation",
+    # "Shipped", "Delivered", "ToValidate", etc. (= toute commande active).
+    EXCLUDED_STATUS = {"Cancelled", "Refused", "Refunded"}
+
+    total_ttc = 0.0
+    page = 1
+    page_size = 100
+    n_kept = 0
+    n_excluded = 0
+    while True:
+        try:
+            r = requests.get(
+                f"{OCTOPIA_API_BASE}/orders",
+                headers=headers,
+                params={
+                    "createdAtMin": f"{date_str}T00:00:00Z",
+                    "createdAtMax": f"{date_str}T23:59:59Z",
+                    "pageIndex":    page,
+                    "pageSize":     page_size,
+                },
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            log.error(f"[Cdiscount] HTTP error page {page} : {e}")
+            return None
+
+        if r.status_code != 200:
+            log.error(f"[Cdiscount] /orders page {page} HTTP {r.status_code} : {r.text[:200]}")
+            return None
+
+        data = r.json()
+        items = data if isinstance(data, list) else data.get("items", data.get("content", []))
+        if not items:
+            break
+
+        for o in items:
+            status = o.get("status", "")
+            if status in EXCLUDED_STATUS:
+                n_excluded += 1
+                continue
+            tp = o.get("totalPrice") or {}
+            if isinstance(tp, dict):
+                sp = tp.get("sellingPrice") or tp.get("offerPrice")
+            else:
+                sp = tp  # legacy : si l'API renvoie un nombre
+            if sp is not None:
+                try:
+                    total_ttc += float(sp)
+                    n_kept += 1
+                except (TypeError, ValueError):
+                    continue
+
+        if len(items) < page_size:
+            break
+        page += 1
+        time.sleep(0.5)
+
+    ca_ht = round(total_ttc / (1 + OCTOPIA_VAT_RATE), 2)
+    log.info(f"[Cdiscount] {n_kept} cmds gardées, {n_excluded} exclues → CA TTC {total_ttc:.2f} → CA HT {ca_ht:.2f} €")
+    return ca_ht
+
+
+# =============================================================
 # GOOGLE SHEETS — Utilitaires
 # =============================================================
 
@@ -1219,6 +1344,7 @@ def detect_missing_dates(max_days=5):
         ("amazon-ads", SHEET_AMAZON_ADS),
         ("meta-ads",   SHEET_META_ADS),
         ("ms-ads",     SHEET_MS_ADS),
+        ("cdiscount",  SHEET_CDISCOUNT),
     ]
 
     try:
@@ -1329,12 +1455,21 @@ def run_for_date(target_date, sheets_filter=None, force_overwrite=False):
             log.info(f"  {name}: {val} €")
         write_report(SHEET_MS_ADS, date_str, ms_ads_result, MICROSOFT_ADS_ORDER, force_overwrite=force_overwrite)
 
+    # ── Cdiscount (Octopia compte ventes) ────────────────────
+    if run_all or "cdiscount" in sheets_filter:
+        log.info(f"=== Cdiscount CA HT — {date_str} ===")
+        cdis_result = {"Cdiscount": fetch_cdiscount_ca_ht(date_api)}
+        log.info("--- Résultats Cdiscount ---")
+        for name, val in cdis_result.items():
+            log.info(f"  {name}: {val} €")
+        write_report(SHEET_CDISCOUNT, date_str, cdis_result, CDISCOUNT_ORDER, force_overwrite=force_overwrite)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Daily report → Google Sheets")
     parser.add_argument("--backfill", metavar="FROM", help="Rattrapage depuis une date (YYYY-MM-DD ou DD/MM/YYYY)")
     parser.add_argument("--to", metavar="TO", help="Date de fin pour le backfill (défaut : hier)")
-    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads,meta-ads,ms-ads (défaut : toutes)")
+    parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads,meta-ads,ms-ads,cdiscount (défaut : toutes)")
     args = parser.parse_args()
 
     paris = ZoneInfo("Europe/Paris")
