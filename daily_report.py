@@ -20,6 +20,7 @@ import time
 import gzip
 import zipfile
 import json as json_mod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date as date_type, timedelta
 from zoneinfo import ZoneInfo
 
@@ -672,6 +673,11 @@ def get_fx_rate_to_eur(currency: str, date_str: str):
 def fetch_amazon_ads_spend(date_str):
     """Retourne {marketplace_name: spend EUR} pour les comptes Amazon Ads.
     Convertit SEK / PLN / GBP en EUR via Frankfurter (taux ECB).
+
+    PARALLÉLISÉ : les 10 marketplaces sont submit + poll en concurrent via
+    un ThreadPoolExecutor. Wall-time = max d'un seul marketplace (~12 min)
+    au lieu de la somme (jusqu'à 2h en séquentiel quand Amazon est lent).
+    Évite que le cron du matin soit interrompu par celui de midi.
     """
     if not AMAZON_ADS_REFRESH_TOKEN:
         log.warning("AMAZON_ADS_REFRESH_TOKEN non configuré → skip Amazon Ads")
@@ -683,29 +689,48 @@ def fetch_amazon_ads_spend(date_str):
         log.error(f"Erreur récupération profils Amazon Ads : {e}")
         return {}
 
+    # Prime le cache de token (évite que 10 threads tentent de le refresh
+    # simultanément si expiré au moment du premier appel parallèle).
+    try:
+        get_amazon_ads_access_token()
+    except Exception as e:
+        log.error(f"[Amazon Ads] Token LWA error : {e}")
+        return {m["name"]: None for m in AMAZON_ADS_MARKETPLACES}
+
     results = {}
+    work = []   # liste de (marketplace_dict, profile_id) à fetcher en parallèle
     for m in AMAZON_ADS_MARKETPLACES:
         name = m["name"]
         cc   = m["country_code"]
-        cur  = m["currency"]
         profile_id = profiles.get(cc)
-
         if not profile_id:
             log.warning(f"[Amazon Ads {name}] Pas de profil pour countryCode={cc}")
             results[name] = 0.0
             continue
+        work.append((m, profile_id))
 
-        try:
-            spend_native = fetch_amazon_ads_sp_spend(profile_id, date_str, name)
-        except Exception as e:
-            log.error(f"[Amazon Ads {name}] Erreur fetch : {e}")
-            results[name] = None
-            continue
+    log.info(f"[Amazon Ads] Submit + poll PARALLÈLE pour {len(work)} marketplaces...")
 
+    # Phase 1+2 en parallèle : chaque thread fait submit → poll → download
+    native_results = {}  # name -> spend en devise native ou None
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        fut2m = {ex.submit(fetch_amazon_ads_sp_spend, p_id, date_str, m["name"]): m for m, p_id in work}
+        for fut in as_completed(fut2m):
+            m = fut2m[fut]
+            try:
+                native_results[m["name"]] = fut.result()
+            except Exception as e:
+                log.error(f"[Amazon Ads {m['name']}] Erreur fetch : {e}")
+                native_results[m["name"]] = None
+
+    # Phase 3 : conversion FX (séquentiel — fast, juste des appels Frankfurter cachés)
+    for m in AMAZON_ADS_MARKETPLACES:
+        name = m["name"]
+        if name in results:
+            continue  # déjà traité (pas de profil)
+        spend_native = native_results.get(name)
+        cur = m["currency"]
         if spend_native is None:
-            # Polling/download a échoué : on n'écrit PAS 0 (qui était trompeur),
-            # on laisse la cellule vide pour que l'auto-backfill du lendemain
-            # rattrape la valeur réelle.
             log.warning(f"[Amazon Ads {name}] Aucune valeur fiable → cellule vide")
             results[name] = None
         elif cur == "EUR":
