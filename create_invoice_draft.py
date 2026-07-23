@@ -30,6 +30,7 @@ STORES = [
     {"name": "TZ",   "prefix": "TZ",   "store": "tarnnetz.myshopify.com",                "client_id": "e6627287d6a9eb12b54344321ec337f1", "client_secret": os.environ.get("SHOPIFY_SECRET_TZ",   ""), "template_id": 710132},
     {"name": "LVO",  "prefix": "LVO",  "store": "le-filet-camouflage-1.myshopify.com",  "client_id": "d7a49b87859af74774aaa7c39d212a27", "client_secret": os.environ.get("SHOPIFY_SECRET_LVO",  ""), "template_id": 710463},
     {"name": "UNIV", "prefix": "UNIV", "store": "univers-camouflage.myshopify.com",      "client_id": "51d4100024e40f174341e73d78e0cbbb", "client_secret": os.environ.get("SHOPIFY_SECRET_UNIV", ""), "template_id": 710484},
+    {"name": "UNIV", "prefix": "UC",   "store": "univers-camouflage.myshopify.com",      "client_id": "51d4100024e40f174341e73d78e0cbbb", "client_secret": os.environ.get("SHOPIFY_SECRET_UNIV", ""), "template_id": 710484},
     {"name": "MO",   "prefix": "MO",   "store": "mon-ombrage.myshopify.com",             "client_id": "55b0cff935270c2545020ecc7fa4704c", "client_secret": os.environ.get("SHOPIFY_SECRET_MO",   ""), "template_id": 710449},
 ]
 
@@ -290,6 +291,7 @@ def process_order(order_name, dry_run=False):
         return False
 
     order = data["orders"][0]
+    real_name = order.get("name") or order_name  # vrai nom Shopify (avec # et suffixe éventuel)
     financial_status = order.get("financial_status", "")
     is_paid = (financial_status == "paid")
 
@@ -382,11 +384,19 @@ def process_order(order_name, dry_run=False):
         sku = item.get("sku", "")
         label = item.get("name", "")
         quantity = int(item.get("quantity", 1))
-        price_ttc = float(item.get("price", 0))
-        price_ht = ttc_to_ht(price_ttc, vat_rate)
 
-        if not sku or not label:
+        if not sku or not label or quantity <= 0:
             continue
+
+        # Net TTC RÉEL calculé par Shopify : prix × quantité − remises déjà allouées
+        # ligne par ligne (discount_allocations). On bake ce net dans le prix HT unitaire
+        # et on ne repasse AUCUNE remise à Pennylane : c'est le seul moyen que la somme
+        # des lignes colle exactement au total_price Shopify (sinon dérive d'arrondi au
+        # centime, car Shopify arrondit le montant de remise, Pennylane la ligne remisée).
+        gross_ttc = float(item.get("price", 0)) * quantity
+        alloc = sum(float(a.get("amount", 0)) for a in item.get("discount_allocations", []))
+        net_unit_ttc = (gross_ttc - alloc) / quantity
+        price_ht = ttc_to_ht(net_unit_ttc, vat_rate)
 
         product = {"sku": sku, "label": label, "price": str(price_ht), "vat_rate": vat_rate, "currency": currency}
         product_id = find_or_create_product(product)
@@ -394,23 +404,16 @@ def process_order(order_name, dry_run=False):
             log.error(f"  Impossible de créer le produit {label}")
             return False
 
-        inv_line = {"product_id": int(product_id), "label": label, "quantity": quantity, "unit": "piece"}
-
-        # Remise relative
-        discount_apps = order.get("discount_applications", [])
-        for da in discount_apps:
-            if da.get("value_type") == "percentage":
-                inv_line["discount"] = {"type": "relative", "value": str(da.get("value", 0))}
-                break
-
-        invoice_lines.append(inv_line)
+        invoice_lines.append({"product_id": int(product_id), "label": label, "quantity": quantity, "unit": "piece"})
 
     # 5. Livraison
     shipping_lines = order.get("shipping_lines", [])
     if shipping_lines:
         sl = shipping_lines[0]
         ship_title = sl.get("title", "Livraison")
-        ship_price_ttc = float(sl.get("price", 0))
+        ship_gross_ttc = float(sl.get("price", 0))
+        ship_alloc = sum(float(a.get("amount", 0)) for a in sl.get("discount_allocations", []))
+        ship_price_ttc = ship_gross_ttc - ship_alloc  # net réel (remise port allouée)
         ship_price_ht = ttc_to_ht(ship_price_ttc, vat_rate)
 
         if ship_title.startswith("Chronopost"):
@@ -437,9 +440,9 @@ def process_order(order_name, dry_run=False):
         vat_text = f"\nNuméro de TVA: {vat_number}\nExonération - TVA non applicable - art. 259-1 du CGI"
 
     if discount_code:
-        special_mention = f"Commande {order_name}\nUtilisation du code {discount_code}{vat_text}{payment_text}"
+        special_mention = f"Commande {real_name}\nUtilisation du code {discount_code}{vat_text}{payment_text}"
     else:
-        special_mention = f"Commande {order_name}{vat_text}{payment_text}"
+        special_mention = f"Commande {real_name}{vat_text}{payment_text}"
 
     note = order.get("note", "")
     if note:
@@ -461,23 +464,48 @@ def process_order(order_name, dry_run=False):
         "invoice_lines": invoice_lines,
     }
 
-    # Remise absolue au niveau facture
-    for da in order.get("discount_applications", []):
-        if da.get("value_type") == "fixed_amount":
-            payload["discount"] = {"type": "absolute", "value": str(da.get("value", 0))}
-            break
+    # Aucune remise au niveau facture : toutes les remises Shopify sont déjà
+    # bakées dans le net HT de chaque ligne (voir boucle produits/livraison).
 
     log.info(f"  Création facture brouillon...")
     resp = requests.post(f"{PL_BASE}/customer_invoices", headers=PL_HEADERS, json=payload, timeout=30)
-
-    if resp.status_code in (200, 201):
-        inv_id = resp.json().get("id")
-        inv_num = resp.json().get("invoice_number", "")
-        log.info(f"  ✅ Facture brouillon créée: {inv_id} ({inv_num})")
-        return True
-    else:
+    if resp.status_code not in (200, 201):
         log.error(f"  ❌ Erreur: {resp.status_code} — {resp.text[:300]}")
         return False
+
+    inv = resp.json()
+    inv_id = inv.get("id")
+
+    # Réconciliation au centime : Pennylane arrondit le HT de ligne à 2 décimales
+    # avant d'appliquer la TVA, donc certains totaux TTC (ex. 17,91 à 20 %) sont
+    # inatteignables avec des lignes propres. On relit le total réel et, s'il diffère
+    # du total Shopify, on ajoute UNE ligne « Écart d'arrondi » (exonérée, donc son
+    # TTC = son montant, sans nouvel arrondi) puis on recrée. La plupart des factures
+    # ne déclenchent rien (écart nul).
+    actual = inv.get("amount")
+    if actual is None:
+        got = pl_get(f"{PL_BASE}/customer_invoices/{inv_id}")
+        actual = got.get("amount") if got else None
+    if actual is not None:
+        residual = round(float(total_price) - float(actual), 2)
+        if abs(residual) >= 0.01:
+            log.info(f"  Écart d'arrondi {residual:+.2f}€ → ajout d'une ligne de régularisation")
+            adj_product = {"sku": "ecart-arrondi", "label": "Écart d'arrondi",
+                           "price": str(residual), "vat_rate": "exempt", "currency": currency}
+            adj_pid = find_or_create_product(adj_product)
+            if adj_pid:
+                payload["invoice_lines"].append({"product_id": int(adj_pid), "label": "Écart d'arrondi", "quantity": 1, "unit": "piece"})
+                requests.delete(f"{PL_BASE}/customer_invoices/{inv_id}", headers=PL_HEADERS, timeout=30)
+                resp = requests.post(f"{PL_BASE}/customer_invoices", headers=PL_HEADERS, json=payload, timeout=30)
+                if resp.status_code not in (200, 201):
+                    log.error(f"  ❌ Erreur (régul): {resp.status_code} — {resp.text[:300]}")
+                    return False
+                inv = resp.json()
+                inv_id = inv.get("id")
+
+    inv_num = inv.get("invoice_number", "")
+    log.info(f"  ✅ Facture brouillon créée: {inv_id} ({inv_num})")
+    return True
 
 
 # =============================================================
