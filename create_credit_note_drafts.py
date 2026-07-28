@@ -15,7 +15,7 @@ Usage :
     python create_credit_note_drafts.py --shop LFC --from 2026-01-01 --to 2026-01-31 [--dry-run]
 """
 import os, json, time, re, logging, argparse, sys
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 import requests
 from dotenv import load_dotenv
 
@@ -131,34 +131,74 @@ def pl_get(path, params=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# KILL-SWITCH (LOT 0 — revue balance 411, 2026-07-28)
-# L'anti-doublon a des angles morts (2e remboursement d'une commande, avoir
-# manuel préexistant non détecté) qui ont produit des SUR-CRÉDITS non
-# supprimables. Tant qu'il n'est pas réparé, on interdit EN DUR toute création
-# d'avoir. Point d'étranglement unique : POST /customer_invoices. Bloque tous
-# les chemins (main, repair_all, create_specific_avoirs) qui importent pl_post.
-# Le dry-run reste possible (il ne poste rien). NE PAS remettre à False sans
-# avoir réparé et re-testé l'anti-doublon.
+# CRAN DE SÛRETÉ AVOIRS (LOT 3.0 — revue balance 411, 2026-07-28)
+#
+# CONDITION DE LEVÉE DÉFINITIVE de ce garde-fou : anti-doublon de
+# create_credit_note_drafts reclé sur refund_id (et non sur la facture) +
+# relecture Pennylane AVANT chaque création. Tant que ces deux conditions ne
+# sont pas remplies, la création d'avoir reste protégée par les 3 barrières.
+#
+# 1. BLOQUÉ PAR DÉFAUT — tout POST /customer_invoices (avoir) est refusé sans
+#    déblocage explicite. Le dry-run et le lettrage ne passent jamais ici.
+# 2. DÉBLOCAGE À L'INVOCATION — AURALIS_AVOIRS_ARMED=1 passé EN LIGNE au
+#    lancement. Cette variable ne doit figurer dans AUCUN fichier du repo
+#    (.env, .env.example, script, Makefile, workflow CI) — voir README.
+# 3. PLAFOND — AURALIS_AVOIRS_CAP avoirs par lancement (défaut 5). Au-delà,
+#    arrêt net. C'est la protection principale : le passif vient d'un VOLUME.
+# 4. TRACE — chaque avoir créé est journalisé (fichier avoirs_audit.log).
 # ═══════════════════════════════════════════════════════════════════════════
-DISARMED = True
+_AVOIR_AUDIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avoirs_audit.log")
+_avoirs_crees = 0  # compteur par invocation
+
+def _avoirs_armes():
+    return os.environ.get("AURALIS_AVOIRS_ARMED") == "1"
+
+def _plafond_avoirs():
+    try:
+        return max(0, int(os.environ.get("AURALIS_AVOIRS_CAP", "5")))
+    except ValueError:
+        return 5
 
 class _BlockedResponse:
-    """Réponse factice quand la création est désarmée : les appelants voient un échec propre."""
     status_code = 403
-    text = "DISARMED (LOT 0): création d'avoir bloquée — anti-doublon non réparé"
+    text = "Avoir bloqué (cran de sûreté) : AURALIS_AVOIRS_ARMED absent"
+class _CapResponse:
+    status_code = 403
+    text = "Avoir bloqué (cran de sûreté) : plafond AURALIS_AVOIRS_CAP atteint"
 
+def _trace_avoir(body, resp):
+    try:
+        sm = (body.get("special_mention") or "").replace("\n", " / ")
+        amt = (resp.json() or {}).get("amount")
+        cmd = " ".join(os.path.basename(a) if i == 0 else a for i, a in enumerate(sys.argv))
+        with open(_AVOIR_AUDIT, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now(timezone.utc).isoformat()}\tcmd={cmd}\tsm={sm}\t"
+                    f"amount={amt}\tcap={_plafond_avoirs()}\n")
+    except Exception as e:
+        log.warning(f"trace avoir échouée: {e}")
 
 def pl_post(path, body):
-    if DISARMED and path.strip("/") == "customer_invoices":
-        log.error("🔒 DÉSARMÉ (LOT 0) : création d'avoir BLOQUÉE. "
-                  "Anti-doublon défaillant — réparer avant de repasser DISARMED=False.")
-        return _BlockedResponse()
+    global _avoirs_crees
+    is_avoir = path.strip("/") == "customer_invoices"
+    if is_avoir:
+        if not _avoirs_armes():
+            log.error("🔒 Création d'avoir BLOQUÉE (cran de sûreté). Usage délibéré : relancer avec "
+                      "AURALIS_AVOIRS_ARMED=1 EN LIGNE (ne JAMAIS persister). "
+                      "Plafond/lancement : AURALIS_AVOIRS_CAP (défaut 5).")
+            return _BlockedResponse()
+        if _avoirs_crees >= _plafond_avoirs():
+            log.error(f"🔒 Plafond de {_plafond_avoirs()} avoirs atteint pour ce lancement — ARRÊT NET. "
+                      "Relancer délibérément (ou AURALIS_AVOIRS_CAP=N) pour continuer.")
+            return _CapResponse()
     # Retry sur 429 (rate-limit) avec backoff — indispensable en cas de runs concurrents.
     for attempt in range(6):
         r = requests.post(f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, json=body, timeout=30)
         if r.status_code == 429:
             time.sleep(min(2 ** attempt, 12)); continue
-        return r
+        break
+    if is_avoir and r.status_code in (200, 201):
+        _avoirs_crees += 1
+        _trace_avoir(body, r)
     return r
 
 
@@ -431,11 +471,13 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="Stop après N refunds traités (0=illimité)")
     args = parser.parse_args()
 
-    # KILL-SWITCH (LOT 0) : dry-run forcé tant que le module est désarmé.
-    if DISARMED and not args.dry_run:
-        log.warning("🔒 DÉSARMÉ (LOT 0) : --real ignoré, exécution FORCÉE en dry-run. "
-                    "Réparer l'anti-doublon avant de repasser DISARMED=False.")
-        args.dry_run = True
+    # Cran de sûreté avoirs : le réel n'aboutit que si AURALIS_AVOIRS_ARMED=1 est
+    # passé EN LIGNE (voir pl_post + README). Sinon chaque POST /customer_invoices
+    # est refusé proprement. On ne force plus le dry-run : le blocage est au POST.
+    if not args.dry_run and not _avoirs_armes():
+        log.warning("ℹ️  Mode réel demandé mais cran de sûreté NON armé : les créations "
+                    "d'avoir seront refusées. Relancer avec AURALIS_AVOIRS_ARMED=1 en ligne "
+                    "(usage délibéré, plafond AURALIS_AVOIRS_CAP=5 par défaut).")
 
     if not PENNYLANE_TOKEN:
         log.error("PENNYLANE_TOKEN manquant"); sys.exit(1)
