@@ -5,3 +5,4 @@ venv/
 
 # Rapports d'exécution (données client : n° commande/facture, customer_id, montants)
 cancel_expired_*.csv
+avoirs_audit.log

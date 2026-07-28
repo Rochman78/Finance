@@ -15,11 +15,16 @@ Usage :
     python create_credit_note_drafts.py --shop LFC --from 2026-01-01 --to 2026-01-31 [--dry-run]
 """
 import os, json, time, re, logging, argparse, sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, timezone
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Date de l'avoir = JOUR de création (un avoir ne s'antidate pas ; évite le blocage
+# de finalisation sur période verrouillée). La date réelle du remboursement reste
+# tracée dans le special_mention.
+AVOIR_DATE = date.today().strftime("%Y-%m-%d")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -29,31 +34,30 @@ PENNYLANE_TOKEN = os.environ.get("PENNYLANE_TOKEN", "")
 PL_BASE = "https://app.pennylane.com/api/external/v2"
 PL_HEADERS = {"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"}
 
-# Mapping name → (store domain, template_id, smiirl SHOP_x slot)
-# Les creds Shopify viennent des env vars SHOP_x_CLIENT_ID / SHOP_x_CLIENT_SECRET
-# (= jeu smiirl avec scope read_all_orders, indispensable pour les commandes > 60 jours)
+# Mapping name → (store domain, template_id, client_id).
+# Convention alignée sur le reste du repo (cadrage_ca.py, create_invoice_draft.py) :
+# client_id public EN DUR + secret via SHOPIFY_SECRET_<NAME> dans .env (jeu smiirl,
+# scope read_all_orders, indispensable pour les commandes > 60 jours).
 STORES_META = [
-    {"name": "LFC",  "prefix": "LFC",  "shop_n": 1, "store": "mon-filet-de-camouflage.myshopify.com", "template_id": 282170},
-    {"name": "RED",  "prefix": "RDC",  "shop_n": 2, "store": "red-de-camuflaje.myshopify.com",        "template_id": 710185},
-    {"name": "HET",  "prefix": "HC",   "shop_n": 3, "store": "het-camouflagenet.myshopify.com",       "template_id": 710153},
-    {"name": "MTC",  "prefix": "COCO", "shop_n": 4, "store": "coconets.myshopify.com",                "template_id": 710211},
-    {"name": "MO",   "prefix": "MO",   "shop_n": 5, "store": "mon-ombrage.myshopify.com",             "template_id": 710449},
-    {"name": "RETE", "prefix": "RM",   "shop_n": 6, "store": "rete-mimetica.myshopify.com",           "template_id": 710214},
-    {"name": "TZ",   "prefix": "TZ",   "shop_n": 7, "store": "tarnnetz.myshopify.com",                "template_id": 710132},
-    {"name": "LVO",  "prefix": "LVO",  "shop_n": 8, "store": "le-filet-camouflage-1.myshopify.com",  "template_id": 710463},
-    {"name": "UNIV", "prefix": "UNIV", "shop_n": 9, "store": "univers-camouflage.myshopify.com",      "template_id": 710484},
+    {"name": "LFC",  "prefix": "LFC",  "client_id": "16d136da2babe857d91f3814b57c6028", "store": "mon-filet-de-camouflage.myshopify.com", "template_id": 282170},
+    {"name": "RED",  "prefix": "RDC",  "client_id": "9ea1ae211e98a704b12c0c6269006fdf", "store": "red-de-camuflaje.myshopify.com",        "template_id": 710185},
+    {"name": "HET",  "prefix": "HC",   "client_id": "ef87e54b80cd6af36446f660da1ce7ce", "store": "het-camouflagenet.myshopify.com",       "template_id": 710153},
+    {"name": "MTC",  "prefix": "COCO", "client_id": "ff7163cadd5f10752d05dd2b504b95cf", "store": "coconets.myshopify.com",                "template_id": 710211},
+    {"name": "MO",   "prefix": "MO",   "client_id": "55b0cff935270c2545020ecc7fa4704c", "store": "mon-ombrage.myshopify.com",             "template_id": 710449},
+    {"name": "RETE", "prefix": "RM",   "client_id": "c948511fe38f27931b77caf611f53d06", "store": "rete-mimetica.myshopify.com",           "template_id": 710214},
+    {"name": "TZ",   "prefix": "TZ",   "client_id": "e6627287d6a9eb12b54344321ec337f1", "store": "tarnnetz.myshopify.com",                "template_id": 710132},
+    {"name": "LVO",  "prefix": "LVO",  "client_id": "d7a49b87859af74774aaa7c39d212a27", "store": "le-filet-camouflage-1.myshopify.com",  "template_id": 710463},
+    {"name": "UNIV", "prefix": "UNIV", "client_id": "51d4100024e40f174341e73d78e0cbbb", "store": "univers-camouflage.myshopify.com",      "template_id": 710484},
 ]
 
 def _build_stores():
-    """Hydrate STORES_META avec client_id/secret depuis SHOP_{n}_CLIENT_ID/SECRET."""
+    """Hydrate STORES_META avec le secret depuis SHOPIFY_SECRET_<NAME> (client_id en dur)."""
     out = []
     for m in STORES_META:
-        n = m["shop_n"]
-        cid  = os.environ.get(f"SHOP_{n}_CLIENT_ID", "")
-        csec = os.environ.get(f"SHOP_{n}_CLIENT_SECRET", "")
-        if not cid or not csec:
+        csec = os.environ.get(f"SHOPIFY_SECRET_{m['name']}", "")
+        if not m.get("client_id") or not csec:
             continue
-        out.append({**m, "client_id": cid, "client_secret": csec})
+        out.append({**m, "client_secret": csec})
     return out
 
 STORES = _build_stores()
@@ -126,8 +130,75 @@ def pl_get(path, params=None):
     return r.json()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# CRAN DE SÛRETÉ AVOIRS (LOT 3.0 — revue balance 411, 2026-07-28)
+#
+# CONDITION DE LEVÉE DÉFINITIVE de ce garde-fou : anti-doublon de
+# create_credit_note_drafts reclé sur refund_id (et non sur la facture) +
+# relecture Pennylane AVANT chaque création. Tant que ces deux conditions ne
+# sont pas remplies, la création d'avoir reste protégée par les 3 barrières.
+#
+# 1. BLOQUÉ PAR DÉFAUT — tout POST /customer_invoices (avoir) est refusé sans
+#    déblocage explicite. Le dry-run et le lettrage ne passent jamais ici.
+# 2. DÉBLOCAGE À L'INVOCATION — AURALIS_AVOIRS_ARMED=1 passé EN LIGNE au
+#    lancement. Cette variable ne doit figurer dans AUCUN fichier du repo
+#    (.env, .env.example, script, Makefile, workflow CI) — voir README.
+# 3. PLAFOND — AURALIS_AVOIRS_CAP avoirs par lancement (défaut 5). Au-delà,
+#    arrêt net. C'est la protection principale : le passif vient d'un VOLUME.
+# 4. TRACE — chaque avoir créé est journalisé (fichier avoirs_audit.log).
+# ═══════════════════════════════════════════════════════════════════════════
+_AVOIR_AUDIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avoirs_audit.log")
+_avoirs_crees = 0  # compteur par invocation
+
+def _avoirs_armes():
+    return os.environ.get("AURALIS_AVOIRS_ARMED") == "1"
+
+def _plafond_avoirs():
+    try:
+        return max(0, int(os.environ.get("AURALIS_AVOIRS_CAP", "5")))
+    except ValueError:
+        return 5
+
+class _BlockedResponse:
+    status_code = 403
+    text = "Avoir bloqué (cran de sûreté) : AURALIS_AVOIRS_ARMED absent"
+class _CapResponse:
+    status_code = 403
+    text = "Avoir bloqué (cran de sûreté) : plafond AURALIS_AVOIRS_CAP atteint"
+
+def _trace_avoir(body, resp):
+    try:
+        sm = (body.get("special_mention") or "").replace("\n", " / ")
+        amt = (resp.json() or {}).get("amount")
+        cmd = " ".join(os.path.basename(a) if i == 0 else a for i, a in enumerate(sys.argv))
+        with open(_AVOIR_AUDIT, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now(timezone.utc).isoformat()}\tcmd={cmd}\tsm={sm}\t"
+                    f"amount={amt}\tcap={_plafond_avoirs()}\n")
+    except Exception as e:
+        log.warning(f"trace avoir échouée: {e}")
+
 def pl_post(path, body):
-    r = requests.post(f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, json=body, timeout=30)
+    global _avoirs_crees
+    is_avoir = path.strip("/") == "customer_invoices"
+    if is_avoir:
+        if not _avoirs_armes():
+            log.error("🔒 Création d'avoir BLOQUÉE (cran de sûreté). Usage délibéré : relancer avec "
+                      "AURALIS_AVOIRS_ARMED=1 EN LIGNE (ne JAMAIS persister). "
+                      "Plafond/lancement : AURALIS_AVOIRS_CAP (défaut 5).")
+            return _BlockedResponse()
+        if _avoirs_crees >= _plafond_avoirs():
+            log.error(f"🔒 Plafond de {_plafond_avoirs()} avoirs atteint pour ce lancement — ARRÊT NET. "
+                      "Relancer délibérément (ou AURALIS_AVOIRS_CAP=N) pour continuer.")
+            return _CapResponse()
+    # Retry sur 429 (rate-limit) avec backoff — indispensable en cas de runs concurrents.
+    for attempt in range(6):
+        r = requests.post(f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, json=body, timeout=30)
+        if r.status_code == 429:
+            time.sleep(min(2 ** attempt, 12)); continue
+        break
+    if is_avoir and r.status_code in (200, 201):
+        _avoirs_crees += 1
+        _trace_avoir(body, r)
     return r
 
 
@@ -318,12 +389,12 @@ def process_one_refund(order, refund, invoice, invoice_lines, store_config, dry_
         extra["discount"] = inv_discount
 
     payload = {
-        "date": refund_date,
-        "deadline": refund_date,
+        "date": AVOIR_DATE,
+        "deadline": AVOIR_DATE,
         "customer_id": (invoice.get("customer") or {}).get("id"),
         "customer_invoice_template_id": int(store_config["template_id"]),
         "currency": "EUR",
-        "special_mention": f"Avoir concernant la facture {inv_number}\nCommande {order_name}",
+        "special_mention": f"Avoir concernant la facture {inv_number}\nCommande {order_name}\nRemboursement du {refund_date}",
         "language": "fr_FR",
         "draft": True,
         "invoice_lines": avoir_lines,
@@ -399,6 +470,14 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="N'écrit rien, log seulement ce qu'il ferait")
     parser.add_argument("--limit", type=int, default=0, help="Stop après N refunds traités (0=illimité)")
     args = parser.parse_args()
+
+    # Cran de sûreté avoirs : le réel n'aboutit que si AURALIS_AVOIRS_ARMED=1 est
+    # passé EN LIGNE (voir pl_post + README). Sinon chaque POST /customer_invoices
+    # est refusé proprement. On ne force plus le dry-run : le blocage est au POST.
+    if not args.dry_run and not _avoirs_armes():
+        log.warning("ℹ️  Mode réel demandé mais cran de sûreté NON armé : les créations "
+                    "d'avoir seront refusées. Relancer avec AURALIS_AVOIRS_ARMED=1 en ligne "
+                    "(usage délibéré, plafond AURALIS_AVOIRS_CAP=5 par défaut).")
 
     if not PENNYLANE_TOKEN:
         log.error("PENNYLANE_TOKEN manquant"); sys.exit(1)
