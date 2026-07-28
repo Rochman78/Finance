@@ -15,11 +15,16 @@ Usage :
     python create_credit_note_drafts.py --shop LFC --from 2026-01-01 --to 2026-01-31 [--dry-run]
 """
 import os, json, time, re, logging, argparse, sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Date de l'avoir = JOUR de création (un avoir ne s'antidate pas ; évite le blocage
+# de finalisation sur période verrouillée). La date réelle du remboursement reste
+# tracée dans le special_mention.
+AVOIR_DATE = date.today().strftime("%Y-%m-%d")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -29,31 +34,30 @@ PENNYLANE_TOKEN = os.environ.get("PENNYLANE_TOKEN", "")
 PL_BASE = "https://app.pennylane.com/api/external/v2"
 PL_HEADERS = {"Authorization": f"Bearer {PENNYLANE_TOKEN}", "Content-Type": "application/json"}
 
-# Mapping name → (store domain, template_id, smiirl SHOP_x slot)
-# Les creds Shopify viennent des env vars SHOP_x_CLIENT_ID / SHOP_x_CLIENT_SECRET
-# (= jeu smiirl avec scope read_all_orders, indispensable pour les commandes > 60 jours)
+# Mapping name → (store domain, template_id, client_id).
+# Convention alignée sur le reste du repo (cadrage_ca.py, create_invoice_draft.py) :
+# client_id public EN DUR + secret via SHOPIFY_SECRET_<NAME> dans .env (jeu smiirl,
+# scope read_all_orders, indispensable pour les commandes > 60 jours).
 STORES_META = [
-    {"name": "LFC",  "prefix": "LFC",  "shop_n": 1, "store": "mon-filet-de-camouflage.myshopify.com", "template_id": 282170},
-    {"name": "RED",  "prefix": "RDC",  "shop_n": 2, "store": "red-de-camuflaje.myshopify.com",        "template_id": 710185},
-    {"name": "HET",  "prefix": "HC",   "shop_n": 3, "store": "het-camouflagenet.myshopify.com",       "template_id": 710153},
-    {"name": "MTC",  "prefix": "COCO", "shop_n": 4, "store": "coconets.myshopify.com",                "template_id": 710211},
-    {"name": "MO",   "prefix": "MO",   "shop_n": 5, "store": "mon-ombrage.myshopify.com",             "template_id": 710449},
-    {"name": "RETE", "prefix": "RM",   "shop_n": 6, "store": "rete-mimetica.myshopify.com",           "template_id": 710214},
-    {"name": "TZ",   "prefix": "TZ",   "shop_n": 7, "store": "tarnnetz.myshopify.com",                "template_id": 710132},
-    {"name": "LVO",  "prefix": "LVO",  "shop_n": 8, "store": "le-filet-camouflage-1.myshopify.com",  "template_id": 710463},
-    {"name": "UNIV", "prefix": "UNIV", "shop_n": 9, "store": "univers-camouflage.myshopify.com",      "template_id": 710484},
+    {"name": "LFC",  "prefix": "LFC",  "client_id": "16d136da2babe857d91f3814b57c6028", "store": "mon-filet-de-camouflage.myshopify.com", "template_id": 282170},
+    {"name": "RED",  "prefix": "RDC",  "client_id": "9ea1ae211e98a704b12c0c6269006fdf", "store": "red-de-camuflaje.myshopify.com",        "template_id": 710185},
+    {"name": "HET",  "prefix": "HC",   "client_id": "ef87e54b80cd6af36446f660da1ce7ce", "store": "het-camouflagenet.myshopify.com",       "template_id": 710153},
+    {"name": "MTC",  "prefix": "COCO", "client_id": "ff7163cadd5f10752d05dd2b504b95cf", "store": "coconets.myshopify.com",                "template_id": 710211},
+    {"name": "MO",   "prefix": "MO",   "client_id": "55b0cff935270c2545020ecc7fa4704c", "store": "mon-ombrage.myshopify.com",             "template_id": 710449},
+    {"name": "RETE", "prefix": "RM",   "client_id": "c948511fe38f27931b77caf611f53d06", "store": "rete-mimetica.myshopify.com",           "template_id": 710214},
+    {"name": "TZ",   "prefix": "TZ",   "client_id": "e6627287d6a9eb12b54344321ec337f1", "store": "tarnnetz.myshopify.com",                "template_id": 710132},
+    {"name": "LVO",  "prefix": "LVO",  "client_id": "d7a49b87859af74774aaa7c39d212a27", "store": "le-filet-camouflage-1.myshopify.com",  "template_id": 710463},
+    {"name": "UNIV", "prefix": "UNIV", "client_id": "51d4100024e40f174341e73d78e0cbbb", "store": "univers-camouflage.myshopify.com",      "template_id": 710484},
 ]
 
 def _build_stores():
-    """Hydrate STORES_META avec client_id/secret depuis SHOP_{n}_CLIENT_ID/SECRET."""
+    """Hydrate STORES_META avec le secret depuis SHOPIFY_SECRET_<NAME> (client_id en dur)."""
     out = []
     for m in STORES_META:
-        n = m["shop_n"]
-        cid  = os.environ.get(f"SHOP_{n}_CLIENT_ID", "")
-        csec = os.environ.get(f"SHOP_{n}_CLIENT_SECRET", "")
-        if not cid or not csec:
+        csec = os.environ.get(f"SHOPIFY_SECRET_{m['name']}", "")
+        if not m.get("client_id") or not csec:
             continue
-        out.append({**m, "client_id": cid, "client_secret": csec})
+        out.append({**m, "client_secret": csec})
     return out
 
 STORES = _build_stores()
@@ -126,8 +130,35 @@ def pl_get(path, params=None):
     return r.json()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# KILL-SWITCH (LOT 0 — revue balance 411, 2026-07-28)
+# L'anti-doublon a des angles morts (2e remboursement d'une commande, avoir
+# manuel préexistant non détecté) qui ont produit des SUR-CRÉDITS non
+# supprimables. Tant qu'il n'est pas réparé, on interdit EN DUR toute création
+# d'avoir. Point d'étranglement unique : POST /customer_invoices. Bloque tous
+# les chemins (main, repair_all, create_specific_avoirs) qui importent pl_post.
+# Le dry-run reste possible (il ne poste rien). NE PAS remettre à False sans
+# avoir réparé et re-testé l'anti-doublon.
+# ═══════════════════════════════════════════════════════════════════════════
+DISARMED = True
+
+class _BlockedResponse:
+    """Réponse factice quand la création est désarmée : les appelants voient un échec propre."""
+    status_code = 403
+    text = "DISARMED (LOT 0): création d'avoir bloquée — anti-doublon non réparé"
+
+
 def pl_post(path, body):
-    r = requests.post(f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, json=body, timeout=30)
+    if DISARMED and path.strip("/") == "customer_invoices":
+        log.error("🔒 DÉSARMÉ (LOT 0) : création d'avoir BLOQUÉE. "
+                  "Anti-doublon défaillant — réparer avant de repasser DISARMED=False.")
+        return _BlockedResponse()
+    # Retry sur 429 (rate-limit) avec backoff — indispensable en cas de runs concurrents.
+    for attempt in range(6):
+        r = requests.post(f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, json=body, timeout=30)
+        if r.status_code == 429:
+            time.sleep(min(2 ** attempt, 12)); continue
+        return r
     return r
 
 
@@ -318,12 +349,12 @@ def process_one_refund(order, refund, invoice, invoice_lines, store_config, dry_
         extra["discount"] = inv_discount
 
     payload = {
-        "date": refund_date,
-        "deadline": refund_date,
+        "date": AVOIR_DATE,
+        "deadline": AVOIR_DATE,
         "customer_id": (invoice.get("customer") or {}).get("id"),
         "customer_invoice_template_id": int(store_config["template_id"]),
         "currency": "EUR",
-        "special_mention": f"Avoir concernant la facture {inv_number}\nCommande {order_name}",
+        "special_mention": f"Avoir concernant la facture {inv_number}\nCommande {order_name}\nRemboursement du {refund_date}",
         "language": "fr_FR",
         "draft": True,
         "invoice_lines": avoir_lines,
@@ -399,6 +430,12 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="N'écrit rien, log seulement ce qu'il ferait")
     parser.add_argument("--limit", type=int, default=0, help="Stop après N refunds traités (0=illimité)")
     args = parser.parse_args()
+
+    # KILL-SWITCH (LOT 0) : dry-run forcé tant que le module est désarmé.
+    if DISARMED and not args.dry_run:
+        log.warning("🔒 DÉSARMÉ (LOT 0) : --real ignoré, exécution FORCÉE en dry-run. "
+                    "Réparer l'anti-doublon avant de repasser DISARMED=False.")
+        args.dry_run = True
 
     if not PENNYLANE_TOKEN:
         log.error("PENNYLANE_TOKEN manquant"); sys.exit(1)
