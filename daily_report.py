@@ -75,24 +75,48 @@ GADS_STORES = [
 # =============================================================
 # CONFIG AMAZON SP-API
 # =============================================================
-AMAZON_CLIENT_ID     = os.environ.get("AMAZON_CLIENT_ID", "")
-AMAZON_CLIENT_SECRET = os.environ.get("AMAZON_CLIENT_SECRET", "")
-AMAZON_REFRESH_TOKEN = os.environ.get("AMAZON_REFRESH_TOKEN", "")
+# Les identifiants SP-API sont aussi acceptés sous le schéma numéroté utilisé
+# par smiirl-counter (AMAZON_1_*), ce qui permet de partager le même Environment
+# Group Render entre les deux services sans dupliquer les secrets.
+AMAZON_CLIENT_ID     = os.environ.get("AMAZON_CLIENT_ID",     "") or os.environ.get("AMAZON_1_CLIENT_ID",     "")
+AMAZON_CLIENT_SECRET = os.environ.get("AMAZON_CLIENT_SECRET", "") or os.environ.get("AMAZON_1_CLIENT_SECRET", "")
+AMAZON_REFRESH_TOKEN = os.environ.get("AMAZON_REFRESH_TOKEN", "") or os.environ.get("AMAZON_1_REFRESH_TOKEN", "")
 AMAZON_SELLER_ID     = os.environ.get("AMAZON_SELLER_ID", "")
 AMAZON_API_BASE      = "https://sellingpartnerapi-eu.amazon.com"
 
+# "channel" = valeur de la colonne sales-channel du rapport plat Amazon, qui
+# sert à ventiler les commandes par pays (cf. fetch_amazon_ca_ht).
+# Les marketplaceIds Belgique et Pologne étaient erronés (BNVKL2V8VLVYW /
+# A1C3IKJU4TPSC5) : ces deux pays ne remontaient jamais aucune commande.
+# Corrigés d'après smiirl-counter (rebuild/config.js), qui les interroge sans
+# problème.
+#
+# ⚠️ UNITÉ DES MONTANTS ÉCRITS DANS LE SHEET ⚠️
+# "currency" indique la devise de facturation du marketplace. Le CA est écrit
+# dans REPORT AMAZON VENTES **dans cette devise, SANS conversion** :
+#     Suède   → SEK
+#     Pologne → PLN
+#     tous les autres pays → EUR
+# La conversion en euros est faite en aval, hors de ce script. Ne PAS
+# réintroduire de conversion ici : la feuille attend des devises locales.
+# (Cela ne concerne QUE les ventes. Amazon Ads, lui, convertit bien SEK/PLN/GBP
+#  en EUR via Frankfurter — cf. fetch_amazon_ads_spend — et doit le rester.)
 AMAZON_MARKETPLACES = [
-    {"name": "France",      "id": "A13V1IB3VIYZZH", "vat": 0.20},
-    {"name": "Allemagne",   "id": "A1PA6795UKMFR9", "vat": 0.19},
-    {"name": "Belgique",    "id": "BNVKL2V8VLVYW",  "vat": 0.21},
-    {"name": "Espagne",     "id": "A1RKKUPIHCS9HS", "vat": 0.21},
-    {"name": "Italie",      "id": "APJ6JRA9NG5V4",  "vat": 0.22},
-    {"name": "Pays-Bas",    "id": "A1805IZSGTT6HS", "vat": 0.21},
-    {"name": "Suede",       "id": "A2NODRKZP88ZB9", "vat": 0.25},
-    {"name": "Pologne",     "id": "A1C3IKJU4TPSC5", "vat": 0.23},
+    {"name": "France",      "id": "A13V1IB3VIYZZH", "vat": 0.20, "channel": "amazon.fr",     "currency": "EUR"},
+    {"name": "Allemagne",   "id": "A1PA6795UKMFR9", "vat": 0.19, "channel": "amazon.de",     "currency": "EUR"},
+    {"name": "Belgique",    "id": "AMEN7PMS3EDWL",  "vat": 0.21, "channel": "amazon.com.be", "currency": "EUR"},
+    {"name": "Espagne",     "id": "A1RKKUPIHCS9HS", "vat": 0.21, "channel": "amazon.es",     "currency": "EUR"},
+    {"name": "Italie",      "id": "APJ6JRA9NG5V4",  "vat": 0.22, "channel": "amazon.it",     "currency": "EUR"},
+    {"name": "Pays-Bas",    "id": "A1805IZSGTT6HS", "vat": 0.21, "channel": "amazon.nl",     "currency": "EUR"},
+    {"name": "Suede",       "id": "A2NODRKZP88ZB9", "vat": 0.25, "channel": "amazon.se",     "currency": "SEK"},
+    {"name": "Pologne",     "id": "A1C3SOZRARQ6R3", "vat": 0.23, "channel": "amazon.pl",     "currency": "PLN"},
 ]
 
 AMAZON_MARKETPLACE_ORDER = [m["name"] for m in AMAZON_MARKETPLACES]
+
+# Pays dont le CA n'est pas en euros : exclus de la ligne TOTAL du Sheet, qui
+# serait sinon une addition de SEK, de PLN et d'euros.
+AMAZON_NON_EUR = [m["name"] for m in AMAZON_MARKETPLACES if m["currency"] != "EUR"]
 
 # =============================================================
 # CONFIG AMAZON ADS API (Advertising)
@@ -101,6 +125,13 @@ AMAZON_ADS_CLIENT_ID     = os.environ.get("AMAZON_ADS_CLIENT_ID", "") or AMAZON_
 AMAZON_ADS_CLIENT_SECRET = os.environ.get("AMAZON_ADS_CLIENT_SECRET", "") or AMAZON_CLIENT_SECRET
 AMAZON_ADS_REFRESH_TOKEN = os.environ.get("AMAZON_ADS_REFRESH_TOKEN", "")
 AMAZON_ADS_API_BASE      = "https://advertising-api-eu.amazon.com"
+
+# Cadence de polling des rapports Ads (cf. _poll_and_download_report).
+# Valeurs reprises de smiirl-counter, qui interroge la même API sans timeouts.
+POLL_FIRST_WAIT_S    = 180   # attente avant le 1er check de statut
+POLL_INTERVAL_S      = 120   # entre deux checks suivants
+POLL_THROTTLE_WAIT_S = 60    # pause supplémentaire après un 429
+CREATE_STAGGER_S     = 0.5   # décalage entre deux créations de rapport
 
 # Comptes Amazon Ads suivis (le compte couvre 10 marketplaces, dont UK/IE
 # absents de la liste sales AMAZON_MARKETPLACES, et SE/PL/UK qui facturent
@@ -365,6 +396,305 @@ def amazon_get(path, params=None):
     return None
 
 
+def _amazon_create_report(report_type: str, date_str: str, attempt: int = 0):
+    """Demande un rapport SP-API sur une journée. Retourne le reportId ou None."""
+    token = get_amazon_access_token()
+    resp = requests.post(
+        f"{AMAZON_API_BASE}/reports/2021-06-30/reports",
+        headers={"x-amz-access-token": token, "Content-Type": "application/json"},
+        json={
+            "reportType":     report_type,
+            "marketplaceIds": [m["id"] for m in AMAZON_MARKETPLACES],
+            "dataStartTime":  f"{date_str}T00:00:00Z",
+            "dataEndTime":    f"{date_str}T23:59:59Z",
+        },
+        timeout=30,
+    )
+    if resp.status_code == 429:
+        if attempt >= 3:
+            log.error("  [Amazon] Création rapport throttlée 4 fois → abandon")
+            return None
+        log.info("  [Amazon] Création rapport throttlée — pause 60s puis retry")
+        time.sleep(60)
+        return _amazon_create_report(report_type, date_str, attempt + 1)
+    if resp.status_code not in (200, 202):
+        log.error(f"  [Amazon] Création rapport : {resp.status_code} {resp.text[:200]}")
+        return None
+    return resp.json().get("reportId")
+
+
+def _amazon_wait_and_download(report_id: str):
+    """Attend qu'un rapport SP-API soit prêt et retourne son contenu texte.
+    Retourne None si échec/timeout — le caller doit distinguer ce cas de 0 €."""
+    # 30 × 20s = 10 min, cadence de smiirl-counter (rebuild/amazon.js).
+    for _ in range(30):
+        time.sleep(20)
+        status = amazon_get(f"/reports/2021-06-30/reports/{report_id}")
+        if not status:
+            continue
+        state = status.get("processingStatus")
+        if state == "DONE":
+            doc = amazon_get(f"/reports/2021-06-30/documents/{status['reportDocumentId']}")
+            if not doc or not doc.get("url"):
+                log.error("  [Amazon] Document du rapport introuvable")
+                return None
+            dl = requests.get(doc["url"], timeout=60)
+            if dl.status_code != 200:
+                log.error(f"  [Amazon] Téléchargement rapport : HTTP {dl.status_code}")
+                return None
+            raw = dl.content
+            if doc.get("compressionAlgorithm") == "GZIP":
+                raw = gzip.decompress(raw)
+            # Les rapports plats Amazon sont souvent en cp1252, pas en UTF-8.
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return raw.decode("cp1252", errors="replace")
+        if state in ("CANCELLED", "FATAL"):
+            # CANCELLED = Amazon n'a produit aucune donnée pour la période.
+            log.warning(f"  [Amazon] Rapport {state}")
+            return None
+    log.warning("  [Amazon] Timeout : rapport toujours pas prêt après 10 min")
+    return None
+
+
+class AmazonReportUnreadable(Exception):
+    """Le rapport n'a pas pu être lu de façon fiable → aucune valeur exploitable.
+    À distinguer d'un rapport valide annonçant 0 vente."""
+
+
+class AmazonVentilationIncomplete(Exception):
+    """Du CA existe sur un canal de vente non rattaché à un pays connu.
+    La ventilation par pays serait donc fausse : on refuse d'écrire un total
+    partiel, qui passerait pour une baisse d'activité réelle."""
+
+
+class AmazonHybridLookupFailed(Exception):
+    """Une ligne à taxe vide n'a pas pu être arbitrée via l'Orders API.
+    Son HT réel est indéterminable : publier le total reviendrait à écrire un
+    montant amputé de cette ligne. On invalide la journée entière."""
+
+
+def _normalize_channel(raw: str) -> str:
+    """Normalise une valeur de sales-channel pour comparaison sur le domaine.
+    "  Amazon.FR ", "https://www.amazon.fr/" et "amazon.fr" donnent tous
+    "amazon.fr" — Amazon n'est pas constant sur la casse ni les préfixes."""
+    c = (raw or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if c.startswith(prefix):
+            c = c[len(prefix):]
+    if c.startswith("www."):
+        c = c[4:]
+    return c.rstrip("/").strip()
+
+
+# Seul canal toléré hors des 8 pays de AMAZON_MARKETPLACES.
+#
+# ⚠️ NE PAS ÉTOFFER CETTE LISTE ⚠️
+# "non-amazon" = commandes Multi-Channel Fulfillment : des ventes passées sur
+# les boutiques Shopify mais expédiées par Amazon. Elles sont DÉJÀ comptées
+# dans REPORT SHOPIFY VENTES ; les compter ici les additionnerait deux fois.
+# C'est la seule raison de sa présence, et elle n'est pas généralisable.
+#
+# Tout autre canal (amazon.co.uk, amazon.ie…) est délibérément ABSENT : nous ne
+# vendons pas sur ces marketplaces, donc du CA qui y apparaîtrait signale une
+# anomalie réelle. Il doit invalider la journée et déclencher une alerte, pas
+# être absorbé en silence. Ajouter une entrée ici pour faire taire un log
+# reviendrait à masquer du chiffre d'affaires.
+AMAZON_IGNORED_CHANNELS = {"non-amazon"}
+
+
+# Cache des items de commande, pour n'interroger l'Orders API qu'une fois par
+# commande même si plusieurs de ses lignes ont une taxe vide.
+_amazon_order_items_cache = {}
+
+
+def _amazon_order_items(order_id: str):
+    """Items d'une commande via l'Orders API. Retourne None en cas d'échec."""
+    if order_id in _amazon_order_items_cache:
+        return _amazon_order_items_cache[order_id]
+    time.sleep(0.3)  # throttle SP-API
+    data = amazon_get(f"/orders/v0/orders/{order_id}/orderItems")
+    items = data.get("payload", {}).get("OrderItems") if data else None
+    if items is None:
+        return None
+    par_id = {it.get("OrderItemId"): it for it in items}
+    _amazon_order_items_cache[order_id] = par_id
+    return par_id
+
+
+def _parse_amazon_orders_report(tsv: str, date_str: str) -> dict:
+    """Ventile un rapport plat Amazon en CA HT par pays.
+
+    Une ligne = un article. Deux chemins, selon la colonne item-tax :
+
+      - taxe RENSEIGNÉE → item_price - item_tax, directement depuis le rapport.
+      - taxe VIDE       → on ne peut PAS trancher depuis le rapport seul, car
+        item_price y est tantôt TTC (Amazon collecteur), tantôt déjà HT
+        (autoliquidation intracommunautaire B2B). Diviser par le taux du pays
+        sous-évaluerait de ~16 % toutes les LIC. On bascule donc ces lignes
+        vers l'Orders API, dont ItemPrice - ItemTax donne le HT juste dans les
+        deux régimes. C'est le "chemin hybride".
+
+    Aucune conversion de devise ici : les montants restent dans la devise de
+    facturation du marketplace (SEK pour la Suède, PLN pour la Pologne).
+    Cf. le bloc AMAZON_MARKETPLACES.
+
+    Quatre issues distinctes, jamais confondues :
+      - dict de totaux          → lecture fiable (des 0 y sont de vrais 0)
+      - AmazonReportUnreadable  → on n'a pas su lire, aucune valeur exploitable
+      - AmazonVentilationIncomplete → du CA sur un canal non rattaché à un pays
+      - AmazonHybridLookupFailed    → une ligne à taxe vide reste indéterminée
+    """
+    # Un contenu totalement vide n'est PAS "0 vente" : c'est un rapport qu'on
+    # n'a pas su lire. Amazon renvoie toujours au moins sa ligne d'en-têtes.
+    if not tsv or not tsv.strip():
+        raise AmazonReportUnreadable("contenu vide (pas même la ligne d'en-têtes)")
+
+    lines = tsv.strip().split("\n")
+    headers = [h.strip().lower().replace("_", "-") for h in lines[0].split("\t")]
+    idx = {h: i for i, h in enumerate(headers)}
+    for required in ("sales-channel", "item-price"):
+        if required not in idx:
+            raise AmazonReportUnreadable(
+                f"colonne {required} absente — en-têtes lus : {headers[:12]}"
+            )
+
+    # En-têtes présents mais aucune ligne de données → vraie journée à 0 vente.
+    if len(lines) < 2:
+        log.info("[Amazon] Rapport valide, aucune commande → 0 sur tous les pays")
+        return {m["name"]: 0.0 for m in AMAZON_MARKETPLACES}
+
+    by_channel = {_normalize_channel(m["channel"]): m for m in AMAZON_MARKETPLACES}
+    totals     = {m["name"]: 0.0 for m in AMAZON_MARKETPLACES}
+    orders     = {m["name"]: set() for m in AMAZON_MARKETPLACES}
+    cancelled  = 0
+    hybrides   = 0   # lignes à taxe vide arbitrées via l'Orders API
+    # canal non reconnu -> {"lignes": n, "ca_ttc": float, "devises": set}
+    unmapped   = {}
+
+    def col(cols, key):
+        i = idx.get(key, -1)
+        if i < 0 or i >= len(cols):
+            return ""
+        return cols[i].strip()
+
+    def montant_ttc(cols):
+        """Somme brute TTC d'une ligne, sert à chiffrer les canaux inconnus."""
+        total = 0.0
+        for key in ("item-price", "item-tax", "shipping-price", "shipping-tax"):
+            try:
+                total += float(col(cols, key) or 0)
+            except ValueError:
+                pass
+        return total
+
+    for line in lines[1:]:
+        cols = line.split("\t")
+        if len(cols) < 3:
+            continue
+
+        # Une commande annulée n'est pas du chiffre d'affaires — y compris sur
+        # un canal inconnu, où elle ne doit pas déclencher l'alerte, et y
+        # compris avant tout arbitrage hybride (pas d'appel API inutile).
+        if col(cols, "order-status").lower() in ("cancelled", "canceled"):
+            cancelled += 1
+            continue
+
+        channel = _normalize_channel(col(cols, "sales-channel"))
+        mk = by_channel.get(channel)
+        if not mk:
+            slot = unmapped.setdefault(channel or "(vide)",
+                                       {"lignes": 0, "ca_ttc": 0.0, "devises": set()})
+            slot["lignes"] += 1
+            slot["ca_ttc"] += montant_ttc(cols)
+            cur_row = col(cols, "currency").upper()
+            if cur_row:
+                slot["devises"].add(cur_row)
+            continue
+
+        # Une ligne dont TOUS les montants sont nuls n'a rien à arbitrer :
+        # inutile de dépenser un appel Orders API pour elle.
+        def montant(key):
+            try:
+                return float(col(cols, key) or 0)
+            except ValueError:
+                return 0.0
+
+        item_price, ship_price = montant("item-price"), montant("shipping-price")
+        taxe_vide = not col(cols, "item-tax")
+
+        if taxe_vide and (item_price or ship_price):
+            # Chemin hybride : l'Orders API arbitre TTC vs HT.
+            oid_ligne = col(cols, "order-item-id")
+            oid_cmd   = col(cols, "amazon-order-id")
+            items = _amazon_order_items(oid_cmd) if oid_cmd else None
+            if items is None:
+                raise AmazonHybridLookupFailed(
+                    f"commande {oid_cmd or '?'} : Orders API injoignable"
+                )
+            it = items.get(oid_ligne)
+            if it is None:
+                raise AmazonHybridLookupFailed(
+                    f"commande {oid_cmd} : order-item-id {oid_ligne or '(vide)'} "
+                    f"absent de la réponse Orders API"
+                )
+            def api_montant(champ):
+                return float((it.get(champ) or {}).get("Amount", 0) or 0)
+            ht = ((api_montant("ItemPrice")     - api_montant("ItemTax")) +
+                  (api_montant("ShippingPrice") - api_montant("ShippingTax")))
+            hybrides += 1
+        else:
+            vat = mk["vat"]
+            ht  = 0.0
+            for price_key, tax_key in (("item-price", "item-tax"),
+                                       ("shipping-price", "shipping-tax")):
+                price = montant(price_key)
+                if not price:
+                    continue
+                tax = montant(tax_key)
+                ht += (price - tax) if tax > 0 else (price / (1 + vat))
+
+        totals[mk["name"]] += ht
+        oid = col(cols, "amazon-order-id")
+        if oid:
+            orders[mk["name"]].add(oid)
+
+    if cancelled:
+        log.info(f"  [Amazon] {cancelled} ligne(s) annulée(s) exclue(s) du CA")
+    log.info(f"  [Amazon] {hybrides} ligne(s) à taxe vide arbitrée(s) via l'Orders API")
+
+    # Tout canal non rattaché est journalisé avec son CA, qu'il soit
+    # volontairement hors périmètre ou réellement inattendu.
+    porteurs = []
+    for chan, info in sorted(unmapped.items()):
+        devises = "/".join(sorted(info["devises"])) or "?"
+        detail  = f"{info['lignes']} ligne(s), {info['ca_ttc']:.2f} {devises} TTC"
+        if chan in AMAZON_IGNORED_CHANNELS:
+            log.info(f"  [Amazon] Canal hors périmètre '{chan}' : {detail}")
+        else:
+            log.error(f"  [Amazon] Canal INCONNU '{chan}' : {detail}")
+            if info["ca_ttc"] > 0:
+                porteurs.append(f"{chan} ({info['ca_ttc']:.2f} {devises})")
+
+    # Du CA sur un canal inconnu = ventilation par pays incomplète. On refuse
+    # de publier un total partiel : il ressemblerait à une vraie baisse.
+    if porteurs:
+        raise AmazonVentilationIncomplete(
+            f"{date_str} — CA sur canal(aux) non rattaché(s) : {', '.join(porteurs)}"
+        )
+
+    results = {}
+    for m in AMAZON_MARKETPLACES:
+        name = m["name"]
+        results[name] = round(totals[name], 2)
+        # La devise est affichée systématiquement : SE et PL ne sont pas en EUR
+        # et rien dans la feuille ne le rappelle.
+        log.info(f"[Amazon {name}] {len(orders[name])} commande(s) → "
+                 f"CA HT = {results[name]} {m['currency']}")
+    return results
+
+
 def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> float:
     """
     Retourne le CA HT pour un marketplace Amazon sur une journée.
@@ -421,6 +751,11 @@ def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> floa
         order_id = order.get("AmazonOrderId")
         if not order_id:
             continue
+        # Même règle que la voie principale : une commande annulée n'est pas
+        # du CA. Sans ce filtre, les deux méthodes ne seraient pas comparables.
+        # L'Orders API écrit "Canceled", le rapport plat "Cancelled".
+        if (order.get("OrderStatus") or "").lower() in ("canceled", "cancelled"):
+            continue
 
         time.sleep(0.3)  # throttle
         items_data = amazon_get(f"/orders/v0/orders/{order_id}/orderItems")
@@ -442,8 +777,10 @@ def fetch_amazon_ca_ht_for_marketplace(marketplace: dict, date_str: str) -> floa
     return total_ht
 
 
-def fetch_amazon_ca_ht(date_str: str) -> dict:
-    """Retourne un dict {pays: ca_ht} pour tous les marketplaces."""
+def fetch_amazon_ca_ht_via_orders_api(date_str: str) -> dict:
+    """Secours : un appel Orders API par marketplace, puis un appel par commande.
+    Lent (~110 requêtes/jour) et sensible au throttling — d'où la méthode
+    rapport en voie principale. Conservé au cas où le rapport échoue."""
     results = {}
     for marketplace in AMAZON_MARKETPLACES:
         try:
@@ -452,6 +789,54 @@ def fetch_amazon_ca_ht(date_str: str) -> dict:
             log.error(f"[Amazon {marketplace['name']}] Erreur : {e}")
             results[marketplace["name"]] = None
     return results
+
+
+def fetch_amazon_ca_ht(date_str: str) -> dict:
+    """Retourne un dict {pays: ca_ht} pour tous les marketplaces.
+
+    Voie principale : un seul rapport plat couvrant les 8 marketplaces, ventilé
+    par colonne sales-channel (méthode de smiirl-counter, rebuild/amazon.js).
+    ~5 requêtes API au total au lieu d'une par commande, donc pas de throttling,
+    et l'ancienne dépendance aux marketplaceIds pour identifier le pays disparaît.
+    Bascule sur l'Orders API si le rapport échoue.
+    """
+    if not AMAZON_REFRESH_TOKEN:
+        log.warning("AMAZON_REFRESH_TOKEN non configuré → skip Amazon ventes")
+        return {m["name"]: None for m in AMAZON_MARKETPLACES}
+
+    try:
+        report_id = _amazon_create_report(
+            "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL", date_str
+        )
+        if report_id:
+            log.info(f"  [Amazon] Rapport {report_id} demandé pour {date_str}")
+            tsv = _amazon_wait_and_download(report_id)
+            if tsv is not None:
+                return _parse_amazon_orders_report(tsv, date_str)
+    except AmazonVentilationIncomplete as e:
+        # Cas volontairement NON rattrapé par l'Orders API : celle-ci interroge
+        # les marketplaceIds connus un par un, elle a donc exactement le même
+        # angle mort et renverrait le même total partiel, mais sans alerte.
+        # Mieux vaut aucune donnée qu'une ventilation fausse.
+        log.error(f"[Amazon] Ventilation incomplète → journée invalidée : {e}")
+        telegram_alert(f"• Amazon ventes {date_str} : canal de vente inconnu porteur de CA "
+                       f"→ journée non publiée ({e})")
+        return {m["name"]: None for m in AMAZON_MARKETPLACES}
+    except AmazonHybridLookupFailed as e:
+        # Comme pour la ventilation incomplète : pas de bascule vers l'Orders
+        # API. Si elle est injoignable pour une ligne, elle l'est pour toutes,
+        # et son repli par division est précisément ce qu'on cherche à éviter.
+        log.error(f"[Amazon] Arbitrage taxe vide impossible → journée invalidée : {e}")
+        telegram_alert(f"• Amazon ventes {date_str} : ligne à taxe vide non arbitrable "
+                       f"→ journée non publiée ({e})")
+        return {m["name"]: None for m in AMAZON_MARKETPLACES}
+    except AmazonReportUnreadable as e:
+        log.error(f"[Amazon] Rapport illisible : {e}")
+    except Exception as e:
+        log.error(f"[Amazon] Rapport indisponible : {e}")
+
+    log.warning("[Amazon] Bascule sur l'Orders API (méthode de secours)")
+    return fetch_amazon_ca_ht_via_orders_api(date_str)
 
 
 # =============================================================
@@ -580,26 +965,38 @@ def _create_ads_report(token, profile_id, ad_product, report_type_id, date_str):
     return None
 
 
-def _poll_and_download_report(token, profile_id, report_id):
+def _poll_and_download_report(token, profile_id, report_id, marketplace_name=""):
     """Attend la fin d'un rapport et retourne la somme des coûts."""
     headers = {
         "Authorization": f"Bearer {token}",
         "Amazon-Advertising-API-ClientId": AMAZON_ADS_CLIENT_ID,
         "Amazon-Advertising-API-Scope": profile_id,
     }
-    # Polling budget : 40 tentatives × backoff 8→20s = ~12 min max.
-    # Amazon Ads est régulièrement lent le matin (rapports qui restent
-    # PENDING 5-10 min), un timeout court écrivait 0 € à tort.
+    # Cadence calquée sur smiirl-counter (services/ads/amazon-fetch.js), qui
+    # récupère ces mêmes rapports de façon fiable : Amazon ne génère JAMAIS un
+    # rapport en 8s, donc on attend 3 min avant le 1er check puis on repasse
+    # toutes les 2 min. 6 tentatives = ~13 min, même budget qu'avant mais
+    # ~7x moins de requêtes de statut (10 profils × 40 polls = ~400 GET par
+    # lot, ce qui nous faisait rate-limiter par Amazon et échouer en boucle).
     # Retourne None (et pas 0.0) quand on n'a pas pu télécharger un rapport :
     # le caller saura distinguer "aucune dépense" vs "API timeout/error".
-    for attempt in range(40):
-        time.sleep(min(8 + attempt, 20))
+    tag = f"[Amazon Ads {marketplace_name}]" if marketplace_name else "[Amazon Ads]"
+    for attempt in range(6):
+        time.sleep(POLL_FIRST_WAIT_S if attempt == 0 else POLL_INTERVAL_S)
         resp = requests.get(
             f"{AMAZON_ADS_API_BASE}/reporting/reports/{report_id}",
             headers=headers,
             timeout=30,
         )
+        if resp.status_code == 429:
+            # Throttling : on le trace explicitement (l'ancien `continue` muet
+            # masquait la cause réelle des "Timeout polling") et on laisse le
+            # quota se reconstituer avant le prochain check.
+            log.warning(f"  {tag} 429 throttled (tentative {attempt + 1}/6) — pause {POLL_THROTTLE_WAIT_S}s")
+            time.sleep(POLL_THROTTLE_WAIT_S)
+            continue
         if resp.status_code != 200:
+            log.warning(f"  {tag} statut HTTP {resp.status_code} : {resp.text[:150]}")
             continue
         data = resp.json()
         status = data.get("status")
@@ -617,19 +1014,24 @@ def _poll_and_download_report(token, profile_id, report_id):
     return None
 
 
-def fetch_amazon_ads_sp_spend(profile_id, date_str, marketplace_name):
+def fetch_amazon_ads_sp_spend(profile_id, date_str, marketplace_name, stagger_index=0):
     """Sponsored Products spend pour un profil sur 1 date — en devise NATIVE
     du compte (EUR pour la zone euro, SEK pour SE, PLN pour PL, GBP pour UK).
     On ne fetch que SP : smiirl confirme que c'est la seule famille active
     ("Only Sponsored Products — that's all you use").
+
+    stagger_index : décale la création du rapport pour ne pas envoyer les 10
+    POST simultanément (smiirl espace ses créations de 500 ms).
     """
+    if stagger_index:
+        time.sleep(stagger_index * CREATE_STAGGER_S)
     token = get_amazon_ads_access_token()
     rid = _create_ads_report(token, profile_id, "SPONSORED_PRODUCTS", "spCampaigns", date_str)
     if not rid:
         log.warning(f"[Amazon Ads {marketplace_name}] Pas de reportId")
         return None
     try:
-        spend = _poll_and_download_report(token, profile_id, rid)
+        spend = _poll_and_download_report(token, profile_id, rid, marketplace_name)
     except Exception as e:
         log.warning(f"[Amazon Ads {marketplace_name}] Download error : {e}")
         return None
@@ -714,7 +1116,8 @@ def fetch_amazon_ads_spend(date_str):
     # Phase 1+2 en parallèle : chaque thread fait submit → poll → download
     native_results = {}  # name -> spend en devise native ou None
     with ThreadPoolExecutor(max_workers=10) as ex:
-        fut2m = {ex.submit(fetch_amazon_ads_sp_spend, p_id, date_str, m["name"]): m for m, p_id in work}
+        fut2m = {ex.submit(fetch_amazon_ads_sp_spend, p_id, date_str, m["name"], i): m
+                 for i, (m, p_id) in enumerate(work)}
         for fut in as_completed(fut2m):
             m = fut2m[fut]
             try:
@@ -1163,10 +1566,14 @@ def ensure_sheet_tab(sheet_name: str) -> None:
 
 
 def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_order: list,
-                 force_overwrite: bool = False):
+                 force_overwrite: bool = False, exclude_from_total=None):
     """
     Fonction générique — écrit un rapport dans la feuille sheet_name.
     Structure : ligne 1 = dates, colonne A = noms, dernière ligne = TOTAL.
+
+    exclude_from_total : noms de lignes à retirer de la formule TOTAL. Sert aux
+    feuilles dont toutes les lignes ne sont pas dans la même devise — additionner
+    des SEK à des euros ne produirait aucune grandeur exploitable.
     Ajoute automatiquement les nouvelles lignes si un nouveau nom apparaît.
     Idempotente par défaut : ne réécrit pas si la date existe déjà.
     Si force_overwrite=True : écrase la colonne existante (utilisé par le
@@ -1338,12 +1745,23 @@ def write_report(sheet_name: str, date_str: str, results_by_name: dict, row_orde
         body={"values": values},
     ).execute()
 
-    # Ligne TOTAL
+    # Ligne TOTAL. Par défaut on somme toute la plage ; si certaines lignes sont
+    # dans une autre devise, on énumère explicitement les cellules à inclure
+    # plutôt que de sommer des unités hétérogènes.
+    exclus = set(exclude_from_total or ())
+    if exclus:
+        refs = [f"{col}{i + 2}" for i, name in enumerate(name_list) if name not in exclus]
+        formule = ("=" + "+".join(refs)) if refs else "0"
+        ignores = [n for n in name_list if n in exclus]
+        log.info(f"  [{sheet_name}] TOTAL hors devise locale — exclu(s) : {', '.join(ignores)}")
+    else:
+        formule = f"=SUM({col}2:{col}{total_row - 1})"
+
     sheets.values().update(
         spreadsheetId=SHEET_ID,
         range=f"'{sheet_name}'!{col}{total_row}",
         valueInputOption="USER_ENTERED",
-        body={"values": [[f"=SUM({col}2:{col}{total_row - 1})"]]}
+        body={"values": [[formule]]}
     ).execute()
 
     log.info(f"✅ [{sheet_name}] Écrit — colonne {col}, date {date_str}")
@@ -1450,7 +1868,8 @@ def run_for_date(target_date, sheets_filter=None, force_overwrite=False):
         log.info("--- Résultats Amazon ---")
         for name, val in amazon_result.items():
             log.info(f"  {name}: {val} €")
-        write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER, force_overwrite=force_overwrite)
+        write_report(SHEET_AMAZON, date_str, amazon_result, AMAZON_MARKETPLACE_ORDER,
+                     force_overwrite=force_overwrite, exclude_from_total=AMAZON_NON_EUR)
 
     # ── Amazon Ads ────────────────────────────────────────────
     if run_all or "amazon-ads" in sheets_filter:
@@ -1490,12 +1909,119 @@ def run_for_date(target_date, sheets_filter=None, force_overwrite=False):
         write_report(SHEET_CDISCOUNT, date_str, cdis_result, CDISCOUNT_ORDER, force_overwrite=force_overwrite)
 
 
+def compare_amazon_methods(date_api: str) -> int:
+    """DRY-RUN : compare les deux méthodes de calcul du CA Amazon sur une date,
+    et n'écrit RIEN dans Google Sheets. Retourne un code de sortie shell.
+
+    Sert à valider la méthode rapport (voie principale) contre l'Orders API
+    (méthode historique) avant de faire confiance à la première.
+    """
+    log.info(f"=== DRY-RUN comparaison Amazon — {date_api} (aucune écriture Sheet) ===")
+
+    log.info("\n--- Méthode 1/2 : rapport plat (voie principale) ---")
+    erreur_rapport = None
+    try:
+        rapport = fetch_amazon_ca_ht(date_api)
+    except Exception as e:
+        erreur_rapport = e
+        rapport = {m["name"]: None for m in AMAZON_MARKETPLACES}
+        log.error(f"Méthode rapport en échec : {e}")
+
+    log.info("\n--- Méthode 2/2 : Orders API (secours, lent) ---")
+    try:
+        legacy = fetch_amazon_ca_ht_via_orders_api(date_api)
+    except Exception as e:
+        legacy = {m["name"]: None for m in AMAZON_MARKETPLACES}
+        log.error(f"Méthode Orders API en échec : {e}")
+
+    def fmt(v):
+        return "None" if v is None else f"{v:,.2f}".replace(",", " ")
+
+    print(f"\n{'='*64}")
+    print(f"  CA HT Amazon — {date_api}   (DRY-RUN, rien n'a été écrit)")
+    print(f"{'='*64}")
+    print(f"  {'Pays':<12} {'Rapport':>14} {'Orders API':>14} {'Écart':>14}")
+    print(f"  {'-'*12} {'-'*14} {'-'*14} {'-'*14}")
+
+    tot_r = tot_l = 0.0
+    ecarts = 0
+    # Le TOTAL ne porte que sur les pays en euros : additionner des SEK et des
+    # PLN à des euros ne produirait aucune grandeur exploitable. Il n'a par
+    # ailleurs de sens que si TOUS ces pays ont une valeur — sommer en ignorant
+    # les None donnerait un chiffre qui ressemble à une vraie mesure.
+    eur = [m["name"] for m in AMAZON_MARKETPLACES if m["currency"] == "EUR"]
+    total_r_valide = all(rapport.get(n) is not None for n in eur)
+    total_l_valide = all(legacy.get(n) is not None for n in eur)
+
+    for m in AMAZON_MARKETPLACES:
+        name = m["name"]
+        r, l = rapport.get(name), legacy.get(name)
+        if r is None or l is None:
+            ecart = "n/a"
+        else:
+            d = r - l
+            ecart = f"{d:+,.2f}".replace(",", " ")
+            if abs(d) >= 0.01:
+                ecarts += 1
+                ecart += "  <-"
+        if name in eur:
+            if isinstance(r, (int, float)):
+                tot_r += r
+            if isinstance(l, (int, float)):
+                tot_l += l
+        # La devise est rappelée sur chaque ligne hors zone euro.
+        suffixe = "" if m["currency"] == "EUR" else f" {m['currency']}"
+        print(f"  {name:<12} {fmt(r) + suffixe:>14} {fmt(l) + suffixe:>14} {ecart:>14}")
+
+    aff_r = f"{tot_r:,.2f}".replace(",", " ") if total_r_valide else "incomplet"
+    aff_l = f"{tot_l:,.2f}".replace(",", " ") if total_l_valide else "incomplet"
+    aff_d = (f"{tot_r - tot_l:+,.2f}".replace(",", " ")
+             if total_r_valide and total_l_valide else "n/a")
+    print(f"  {'-'*12} {'-'*14} {'-'*14} {'-'*14}")
+    print(f"  {'TOTAL EUR':<12} {aff_r:>14} {aff_l:>14} {aff_d:>14}")
+    hors = [m["name"] for m in AMAZON_MARKETPLACES if m["currency"] != "EUR"]
+    print(f"  (hors {', '.join(hors)} — devises locales, non additionnables)")
+    print(f"{'='*64}")
+
+    if erreur_rapport is not None:
+        print(f"  /!\\ Méthode rapport en échec : {type(erreur_rapport).__name__}: {erreur_rapport}")
+    if all(v is None for v in rapport.values()):
+        print("  /!\\ La méthode rapport n'a produit AUCUNE valeur exploitable.")
+    elif ecarts:
+        print(f"  /!\\ {ecarts} pays divergent(s) — à expliquer avant de faire confiance au rapport.")
+        print("      Écarts attendus, tous en faveur du rapport (méthode principale) :")
+        print("        • frais de port — jamais comptés par l'Orders API")
+        print("        • autoliquidation intracommunautaire — l'Orders API divise un")
+        print("          montant déjà HT par le taux du pays, sous-évaluant de ~16 %")
+        print("        • commandes B2B où l'Orders API renvoie un prix déjà HT")
+        print("      Les annulations et les devises SE/PL ne créent PLUS d'écart :")
+        print("      filtre identique des deux côtés, et plus aucune conversion.")
+    else:
+        print("  Les deux méthodes concordent sur tous les pays.")
+    print()
+
+    return 0 if not all(v is None for v in rapport.values()) else 1
+
+
 def main():
     parser = argparse.ArgumentParser(description="Daily report → Google Sheets")
+    parser.add_argument("--compare-amazon", metavar="DATE",
+                        help="DRY-RUN : compare rapport plat vs Orders API sur une date "
+                             "(YYYY-MM-DD) et affiche les deux ventilations. N'écrit rien.")
     parser.add_argument("--backfill", metavar="FROM", help="Rattrapage depuis une date (YYYY-MM-DD ou DD/MM/YYYY)")
     parser.add_argument("--to", metavar="TO", help="Date de fin pour le backfill (défaut : hier)")
     parser.add_argument("--sheets", help="Feuilles à traiter, séparées par des virgules : shopify,gads,amazon,amazon-ads,meta-ads,ms-ads,cdiscount (défaut : toutes)")
+    parser.add_argument("--force", action="store_true", help="Backfill : écrase les colonnes dont la date existe déjà (utile après une panne d'API qui a écrit des 0)")
     args = parser.parse_args()
+
+    # DRY-RUN : sortie immédiate, avant toute initialisation Google Sheets.
+    if args.compare_amazon:
+        raw = args.compare_amazon
+        try:
+            d = datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError:
+            d = datetime.strptime(raw, "%d/%m/%Y").date()
+        sys.exit(compare_amazon_methods(d.strftime("%Y-%m-%d")))
 
     paris = ZoneInfo("Europe/Paris")
     sheets_filter = None
@@ -1519,13 +2045,14 @@ def main():
         else:
             end = (datetime.now(paris) - timedelta(days=1)).date()
 
-        log.info(f"=== BACKFILL du {start} au {end} ===")
+        mode = " (force overwrite)" if args.force else ""
+        log.info(f"=== BACKFILL du {start} au {end}{mode} ===")
         current = start
         while current <= end:
             log.info(f"\n{'='*50}")
             log.info(f">>> Date : {current.strftime('%d/%m/%Y')}")
             log.info(f"{'='*50}")
-            run_for_date(current, sheets_filter)
+            run_for_date(current, sheets_filter, force_overwrite=args.force)
             current += timedelta(days=1)
     else:
         # Auto-backfill : détecte les dates manquantes par feuille (5 derniers jours)
