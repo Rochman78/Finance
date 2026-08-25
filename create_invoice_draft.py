@@ -134,12 +134,21 @@ def find_or_create_customer(client_info):
         email = unicodedata.normalize('NFKD', email).encode('ascii', 'ignore').decode('ascii')
     company = client_info.get("company", "")
 
-    # Chercher par email
+    # Recherche : Pennylane v2 a unifié la LECTURE sur /customers ; les anciens
+    # /individual_customers et /company_customers renvoient 404 en GET (l'ÉCRITURE,
+    # elle, y reste). Interroger les anciens revenait à ne jamais trouver personne
+    # — pl_get rend None sur 404 — donc à recréer un client à chaque facture.
+    def _lookup(name, wanted_type):
+        fl = json.dumps([{"field": "name", "operator": "eq", "value": name}])
+        data = pl_get(f"{PL_BASE}/customers", {"filter": fl, "limit": 20})
+        for it in (data or {}).get("items", []):
+            if it.get("customer_type") == wanted_type:
+                return it["id"]
+        return None
+
     if ctype == "individual":
-        fl = json.dumps([{"field": "name", "operator": "eq", "value": f"{first} {last}"}])
-        data = pl_get(f"{PL_BASE}/individual_customers", {"filter": fl, "limit": 5})
-        if data and data.get("items"):
-            cid = data["items"][0]["id"]
+        cid = _lookup(f"{first} {last}", "individual")
+        if cid:
             log.info(f"  Client individuel trouvé: {cid}")
             return cid
         # Créer
@@ -167,10 +176,8 @@ def find_or_create_customer(client_info):
             return cid
     else:
         search_name = company or f"{first} {last}"
-        fl = json.dumps([{"field": "name", "operator": "eq", "value": search_name}])
-        data = pl_get(f"{PL_BASE}/company_customers", {"filter": fl, "limit": 5})
-        if data and data.get("items"):
-            cid = data["items"][0]["id"]
+        cid = _lookup(search_name, "company")
+        if cid:
             log.info(f"  Client société trouvé: {cid}")
             return cid
         payload = {
@@ -266,8 +273,13 @@ def find_store_for_order(order_name):
             return s
     return None
 
-def process_order(order_name, dry_run=False):
-    """Traite une commande Shopify et crée la facture brouillon dans Pennylane."""
+def process_order(order_name, dry_run=False, date_override=None):
+    """Traite une commande Shopify et crée la facture brouillon dans Pennylane.
+
+    date_override : date de facture forcée (YYYY-MM-DD). Par défaut, la facture
+    est datée du jour de la commande. Sert aux rattrapages : une commande passée
+    il y a plusieurs jours peut être facturée à la date du jour.
+    """
     log.info(f"\n{'='*50}")
     log.info(f"Traitement: {order_name}")
 
@@ -317,11 +329,16 @@ def process_order(order_name, dry_run=False):
     billing = order.get("billing_address") or {}
     shipping = order.get("shipping_address") or billing
     currency = order.get("currency", "EUR")
-    invoice_date = order.get("created_at", "")[:10]
+    order_date = order.get("created_at", "")[:10]
+    invoice_date = date_override or order_date
 
-    # Anti-doublon
-    if invoice_already_exists(order_name, invoice_date):
-        return False
+    # Anti-doublon : l'existence se cherche par DATE côté Pennylane, donc en cas de
+    # rattrapage il faut interroger les deux dates — celle de la commande (où la
+    # facture aurait dû être créée) ET celle qu'on s'apprête à poser. Ne chercher
+    # que la date forcée reviendrait à ne pas chercher du tout.
+    for d in dict.fromkeys([invoice_date, order_date]):
+        if invoice_already_exists(order_name, d):
+            return False
 
     # Client
     first_name = customer.get("first_name") or shipping.get("first_name") or billing.get("first_name") or ""
@@ -347,17 +364,21 @@ def process_order(order_name, dry_run=False):
 
     vat_rate, has_vat_exemption = calculate_vat(country_code, customer_type, vat_number)
 
+    # `.get(k, "")` ne protège de rien ici : Shopify renvoie la clé PRÉSENTE et à
+    # null (ex. `zip` pour un pays sans code postal — Curaçao, Hong Kong, Irlande
+    # partiellement). Le défaut ne s'applique qu'à une clé absente, donc None
+    # traversait jusqu'à Pennylane, qui refuse le null. D'où `or ""`.
     client_info = {
         "first_name": first_name, "last_name": last_name,
         "email": email, "phone": phone,
-        "billing_address": billing.get("address1", ""),
-        "billing_postal_code": billing.get("zip", ""),
-        "billing_city": billing.get("city", ""),
-        "country_alpha2": billing.get("country_code", "FR"),
-        "shipping_address": shipping.get("address1", ""),
-        "shipping_postal_code": shipping.get("zip", ""),
-        "shipping_city": shipping.get("city", ""),
-        "shipping_country_alpha2": shipping.get("country_code", "FR"),
+        "billing_address": billing.get("address1") or "",
+        "billing_postal_code": billing.get("zip") or "",
+        "billing_city": billing.get("city") or "",
+        "country_alpha2": billing.get("country_code") or "FR",
+        "shipping_address": shipping.get("address1") or "",
+        "shipping_postal_code": shipping.get("zip") or "",
+        "shipping_city": shipping.get("city") or "",
+        "shipping_country_alpha2": shipping.get("country_code") or "FR",
         "customer_type": customer_type,
         "company": company,
         "vat_number": vat_number,
@@ -515,7 +536,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--orders", required=True, help="Liste de commandes séparées par des virgules")
     parser.add_argument("--dry-run", action="store_true", help="Simulation")
+    parser.add_argument("--date", help="Date de facture forcée YYYY-MM-DD (défaut : date de la commande)")
     args = parser.parse_args()
+
+    if args.date:
+        datetime.strptime(args.date, "%Y-%m-%d")  # lève si format invalide
 
     orders = [o.strip() for o in args.orders.split(",")]
     log.info(f"=== Création de {len(orders)} facture(s) brouillon ===")
@@ -523,7 +548,7 @@ if __name__ == "__main__":
     ok = 0
     ko = 0
     for order_name in orders:
-        if process_order(order_name, dry_run=args.dry_run):
+        if process_order(order_name, dry_run=args.dry_run, date_override=args.date):
             ok += 1
         else:
             ko += 1
