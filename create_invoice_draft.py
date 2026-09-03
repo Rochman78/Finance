@@ -244,6 +244,44 @@ def find_or_create_product(product):
 # =============================================================
 # ANTI-DOUBLON
 # =============================================================
+def customer_already_invoiced(customer_id, order_name):
+    """Deuxième garde-fou, cette fois indexé sur le CLIENT et non sur la date.
+
+    `invoice_already_exists` ne sait chercher que dans une journée donnée (seul
+    `date` est filtrable côté API), donc une facture posée à une autre date lui
+    échappe et le doublon passe. Ici on balaie tout l'historique du client :
+    c'est le contrôle qui attrape les refacturations tardives.
+
+    On ignore les brouillons, les pièces archivées et les factures annulées :
+    réémettre après annulation par avoir est un flux légitime.
+    """
+    if not customer_id:
+        return False
+    # Correspondance EXACTE et non par sous-chaîne : les numéros d'une boutique
+    # étant séquentiels, « LFC4212 » est un préfixe de « LFC42121 » et un simple
+    # `in` ferait sauter à tort une facture légitime.
+    rx = re.compile(rf"(?<![A-Za-z0-9]){re.escape(order_name)}(?![0-9])", re.IGNORECASE)
+    fl = json.dumps([{"field": "customer_id", "operator": "eq", "value": str(customer_id)}])
+    cursor = None
+    while True:
+        params = {"filter": fl, "limit": 100}
+        if cursor: params["cursor"] = cursor
+        data = pl_get(f"{PL_BASE}/customer_invoices", params)
+        if not data: break
+        for inv in data.get("items", []):
+            if inv.get("draft") or inv.get("archived_at"): continue
+            if inv.get("status") not in ("paid", "late", "upcoming", "partially_paid"): continue
+            sm = (inv.get("special_mention") or "") + " " + (inv.get("label") or "")
+            if rx.search(sm):
+                log.info(f"  ⚠️ {order_name} déjà facturé au client {customer_id} "
+                         f"({inv.get('invoice_number')} du {inv.get('date')}, {inv.get('amount')}€)")
+                return True
+        if not data.get("has_more"): break
+        cursor = data.get("next_cursor")
+        if not cursor: break
+    return False
+
+
 def invoice_already_exists(order_name, date_str):
     """Vérifie si une facture existe déjà pour cette commande dans Pennylane."""
     fl = json.dumps([{"field": "date", "operator": "eq", "value": date_str}])
@@ -397,6 +435,12 @@ def process_order(order_name, dry_run=False, date_override=None):
         log.error(f"  Impossible de créer le client")
         return False
 
+    # Anti-doublon, seconde passe : maintenant qu'on connaît le client, on peut
+    # chercher sur tout son historique et plus seulement sur deux dates.
+    if customer_already_invoiced(customer_id, order_name):
+        log.info(f"  → Skip: doublon évité")
+        return False
+
     # 4. Produits
     line_items = order.get("line_items", [])
     invoice_lines = []
@@ -516,7 +560,18 @@ def process_order(order_name, dry_run=False, date_override=None):
             adj_pid = find_or_create_product(adj_product)
             if adj_pid:
                 payload["invoice_lines"].append({"product_id": int(adj_pid), "label": "Écart d'arrondi", "quantity": 1, "unit": "piece"})
-                requests.delete(f"{PL_BASE}/customer_invoices/{inv_id}", headers=PL_HEADERS, timeout=30)
+                # Le DELETE doit RÉUSSIR avant de reposter : sinon on laisse la
+                # première facture en place et on en crée une seconde pour la même
+                # commande — deux débits au 411 pour un seul encaissement, donc un
+                # solde débiteur définitif chez le client. On préfère garder la
+                # facture à ±quelques centimes et le signaler.
+                del_resp = requests.delete(f"{PL_BASE}/customer_invoices/{inv_id}", headers=PL_HEADERS, timeout=30)
+                if del_resp.status_code not in (200, 202, 204):
+                    log.error(f"  ⚠️ {order_name} — suppression de {inv_id} refusée "
+                              f"({del_resp.status_code}: {del_resp.text[:200]}) → facture CONSERVÉE telle quelle, "
+                              f"écart d'arrondi {residual:+.2f}€ non régularisé (pas de second POST)")
+                    log.info(f"  ✅ Facture brouillon créée: {inv_id} ({inv.get('invoice_number', '')})")
+                    return True
                 resp = requests.post(f"{PL_BASE}/customer_invoices", headers=PL_HEADERS, json=payload, timeout=30)
                 if resp.status_code not in (200, 201):
                     log.error(f"  ❌ Erreur (régul): {resp.status_code} — {resp.text[:300]}")
