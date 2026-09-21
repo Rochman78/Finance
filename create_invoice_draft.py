@@ -134,12 +134,21 @@ def find_or_create_customer(client_info):
         email = unicodedata.normalize('NFKD', email).encode('ascii', 'ignore').decode('ascii')
     company = client_info.get("company", "")
 
-    # Chercher par email
+    # Recherche : Pennylane v2 a unifié la LECTURE sur /customers ; les anciens
+    # /individual_customers et /company_customers renvoient 404 en GET (l'ÉCRITURE,
+    # elle, y reste). Interroger les anciens revenait à ne jamais trouver personne
+    # — pl_get rend None sur 404 — donc à recréer un client à chaque facture.
+    def _lookup(name, wanted_type):
+        fl = json.dumps([{"field": "name", "operator": "eq", "value": name}])
+        data = pl_get(f"{PL_BASE}/customers", {"filter": fl, "limit": 20})
+        for it in (data or {}).get("items", []):
+            if it.get("customer_type") == wanted_type:
+                return it["id"]
+        return None
+
     if ctype == "individual":
-        fl = json.dumps([{"field": "name", "operator": "eq", "value": f"{first} {last}"}])
-        data = pl_get(f"{PL_BASE}/individual_customers", {"filter": fl, "limit": 5})
-        if data and data.get("items"):
-            cid = data["items"][0]["id"]
+        cid = _lookup(f"{first} {last}", "individual")
+        if cid:
             log.info(f"  Client individuel trouvé: {cid}")
             return cid
         # Créer
@@ -167,10 +176,8 @@ def find_or_create_customer(client_info):
             return cid
     else:
         search_name = company or f"{first} {last}"
-        fl = json.dumps([{"field": "name", "operator": "eq", "value": search_name}])
-        data = pl_get(f"{PL_BASE}/company_customers", {"filter": fl, "limit": 5})
-        if data and data.get("items"):
-            cid = data["items"][0]["id"]
+        cid = _lookup(search_name, "company")
+        if cid:
             log.info(f"  Client société trouvé: {cid}")
             return cid
         payload = {
@@ -237,6 +244,44 @@ def find_or_create_product(product):
 # =============================================================
 # ANTI-DOUBLON
 # =============================================================
+def customer_already_invoiced(customer_id, order_name):
+    """Deuxième garde-fou, cette fois indexé sur le CLIENT et non sur la date.
+
+    `invoice_already_exists` ne sait chercher que dans une journée donnée (seul
+    `date` est filtrable côté API), donc une facture posée à une autre date lui
+    échappe et le doublon passe. Ici on balaie tout l'historique du client :
+    c'est le contrôle qui attrape les refacturations tardives.
+
+    On ignore les brouillons, les pièces archivées et les factures annulées :
+    réémettre après annulation par avoir est un flux légitime.
+    """
+    if not customer_id:
+        return False
+    # Correspondance EXACTE et non par sous-chaîne : les numéros d'une boutique
+    # étant séquentiels, « LFC4212 » est un préfixe de « LFC42121 » et un simple
+    # `in` ferait sauter à tort une facture légitime.
+    rx = re.compile(rf"(?<![A-Za-z0-9]){re.escape(order_name)}(?![0-9])", re.IGNORECASE)
+    fl = json.dumps([{"field": "customer_id", "operator": "eq", "value": str(customer_id)}])
+    cursor = None
+    while True:
+        params = {"filter": fl, "limit": 100}
+        if cursor: params["cursor"] = cursor
+        data = pl_get(f"{PL_BASE}/customer_invoices", params)
+        if not data: break
+        for inv in data.get("items", []):
+            if inv.get("draft") or inv.get("archived_at"): continue
+            if inv.get("status") not in ("paid", "late", "upcoming", "partially_paid"): continue
+            sm = (inv.get("special_mention") or "") + " " + (inv.get("label") or "")
+            if rx.search(sm):
+                log.info(f"  ⚠️ {order_name} déjà facturé au client {customer_id} "
+                         f"({inv.get('invoice_number')} du {inv.get('date')}, {inv.get('amount')}€)")
+                return True
+        if not data.get("has_more"): break
+        cursor = data.get("next_cursor")
+        if not cursor: break
+    return False
+
+
 def invoice_already_exists(order_name, date_str):
     """Vérifie si une facture existe déjà pour cette commande dans Pennylane."""
     fl = json.dumps([{"field": "date", "operator": "eq", "value": date_str}])
@@ -266,8 +311,13 @@ def find_store_for_order(order_name):
             return s
     return None
 
-def process_order(order_name, dry_run=False):
-    """Traite une commande Shopify et crée la facture brouillon dans Pennylane."""
+def process_order(order_name, dry_run=False, date_override=None):
+    """Traite une commande Shopify et crée la facture brouillon dans Pennylane.
+
+    date_override : date de facture forcée (YYYY-MM-DD). Par défaut, la facture
+    est datée du jour de la commande. Sert aux rattrapages : une commande passée
+    il y a plusieurs jours peut être facturée à la date du jour.
+    """
     log.info(f"\n{'='*50}")
     log.info(f"Traitement: {order_name}")
 
@@ -317,11 +367,16 @@ def process_order(order_name, dry_run=False):
     billing = order.get("billing_address") or {}
     shipping = order.get("shipping_address") or billing
     currency = order.get("currency", "EUR")
-    invoice_date = order.get("created_at", "")[:10]
+    order_date = order.get("created_at", "")[:10]
+    invoice_date = date_override or order_date
 
-    # Anti-doublon
-    if invoice_already_exists(order_name, invoice_date):
-        return False
+    # Anti-doublon : l'existence se cherche par DATE côté Pennylane, donc en cas de
+    # rattrapage il faut interroger les deux dates — celle de la commande (où la
+    # facture aurait dû être créée) ET celle qu'on s'apprête à poser. Ne chercher
+    # que la date forcée reviendrait à ne pas chercher du tout.
+    for d in dict.fromkeys([invoice_date, order_date]):
+        if invoice_already_exists(order_name, d):
+            return False
 
     # Client
     first_name = customer.get("first_name") or shipping.get("first_name") or billing.get("first_name") or ""
@@ -347,17 +402,21 @@ def process_order(order_name, dry_run=False):
 
     vat_rate, has_vat_exemption = calculate_vat(country_code, customer_type, vat_number)
 
+    # `.get(k, "")` ne protège de rien ici : Shopify renvoie la clé PRÉSENTE et à
+    # null (ex. `zip` pour un pays sans code postal — Curaçao, Hong Kong, Irlande
+    # partiellement). Le défaut ne s'applique qu'à une clé absente, donc None
+    # traversait jusqu'à Pennylane, qui refuse le null. D'où `or ""`.
     client_info = {
         "first_name": first_name, "last_name": last_name,
         "email": email, "phone": phone,
-        "billing_address": billing.get("address1", ""),
-        "billing_postal_code": billing.get("zip", ""),
-        "billing_city": billing.get("city", ""),
-        "country_alpha2": billing.get("country_code", "FR"),
-        "shipping_address": shipping.get("address1", ""),
-        "shipping_postal_code": shipping.get("zip", ""),
-        "shipping_city": shipping.get("city", ""),
-        "shipping_country_alpha2": shipping.get("country_code", "FR"),
+        "billing_address": billing.get("address1") or "",
+        "billing_postal_code": billing.get("zip") or "",
+        "billing_city": billing.get("city") or "",
+        "country_alpha2": billing.get("country_code") or "FR",
+        "shipping_address": shipping.get("address1") or "",
+        "shipping_postal_code": shipping.get("zip") or "",
+        "shipping_city": shipping.get("city") or "",
+        "shipping_country_alpha2": shipping.get("country_code") or "FR",
         "customer_type": customer_type,
         "company": company,
         "vat_number": vat_number,
@@ -374,6 +433,12 @@ def process_order(order_name, dry_run=False):
     customer_id = find_or_create_customer(client_info)
     if not customer_id:
         log.error(f"  Impossible de créer le client")
+        return False
+
+    # Anti-doublon, seconde passe : maintenant qu'on connaît le client, on peut
+    # chercher sur tout son historique et plus seulement sur deux dates.
+    if customer_already_invoiced(customer_id, order_name):
+        log.info(f"  → Skip: doublon évité")
         return False
 
     # 4. Produits
@@ -495,7 +560,18 @@ def process_order(order_name, dry_run=False):
             adj_pid = find_or_create_product(adj_product)
             if adj_pid:
                 payload["invoice_lines"].append({"product_id": int(adj_pid), "label": "Écart d'arrondi", "quantity": 1, "unit": "piece"})
-                requests.delete(f"{PL_BASE}/customer_invoices/{inv_id}", headers=PL_HEADERS, timeout=30)
+                # Le DELETE doit RÉUSSIR avant de reposter : sinon on laisse la
+                # première facture en place et on en crée une seconde pour la même
+                # commande — deux débits au 411 pour un seul encaissement, donc un
+                # solde débiteur définitif chez le client. On préfère garder la
+                # facture à ±quelques centimes et le signaler.
+                del_resp = requests.delete(f"{PL_BASE}/customer_invoices/{inv_id}", headers=PL_HEADERS, timeout=30)
+                if del_resp.status_code not in (200, 202, 204):
+                    log.error(f"  ⚠️ {order_name} — suppression de {inv_id} refusée "
+                              f"({del_resp.status_code}: {del_resp.text[:200]}) → facture CONSERVÉE telle quelle, "
+                              f"écart d'arrondi {residual:+.2f}€ non régularisé (pas de second POST)")
+                    log.info(f"  ✅ Facture brouillon créée: {inv_id} ({inv.get('invoice_number', '')})")
+                    return True
                 resp = requests.post(f"{PL_BASE}/customer_invoices", headers=PL_HEADERS, json=payload, timeout=30)
                 if resp.status_code not in (200, 201):
                     log.error(f"  ❌ Erreur (régul): {resp.status_code} — {resp.text[:300]}")
@@ -515,7 +591,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--orders", required=True, help="Liste de commandes séparées par des virgules")
     parser.add_argument("--dry-run", action="store_true", help="Simulation")
+    parser.add_argument("--date", help="Date de facture forcée YYYY-MM-DD (défaut : date de la commande)")
     args = parser.parse_args()
+
+    if args.date:
+        datetime.strptime(args.date, "%Y-%m-%d")  # lève si format invalide
 
     orders = [o.strip() for o in args.orders.split(",")]
     log.info(f"=== Création de {len(orders)} facture(s) brouillon ===")
@@ -523,7 +603,7 @@ if __name__ == "__main__":
     ok = 0
     ko = 0
     for order_name in orders:
-        if process_order(order_name, dry_run=args.dry_run):
+        if process_order(order_name, dry_run=args.dry_run, date_override=args.date):
             ok += 1
         else:
             ko += 1

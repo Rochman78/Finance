@@ -1,0 +1,31 @@
+# Service cron Render (espace Zephyr), à créer depuis ce repo.
+services:
+  - type: cron
+    name: finance-avoirs-du-jour
+    runtime: python
+    plan: starter
+    # Render planifie en UTC. 20h UTC = 22h Paris en été, 21h UTC = 22h Paris
+    # en hiver : le script ne tourne que si l'heure de Paris est 22h.
+    schedule: "0 20,21 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cron_avoirs_du_jour.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: AURALIS_AVOIRS_CRON
+        value: "1"           # voie cron du cran de sûreté (README_CRAN_SURETE_AVOIRS.md)
+      - key: AURALIS_AVOIRS_CRON_CAP
+        value: "5"           # premier run sous surveillance ; passer à 40 ensuite
+      - key: PENNYLANE_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: AVOIRS_MAIL_TO
+        value: contact@zephyrosc.com   # mail de revue INTERNE, jamais au client
+      # SMTP OVH : mêmes valeurs que le service smiirl-counter
+      # (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM facultatif).
+      # Identifiants Shopify : les mêmes que le service smiirl-counter
+      # (SHOP_<i>, SHOP_<i>_NAME, SHOP_<i>_CLIENT_ID, SHOP_<i>_CLIENT_SECRET, i = 1..9).
+      - fromGroup: shopify-smiirl
