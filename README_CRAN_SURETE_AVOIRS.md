@@ -77,3 +77,30 @@ listés sous « À TRANCHER À LA MAIN » en fin de run.
 Reste donc à **valider ces garde-fous sur une campagne réelle** avant de retirer
 le cran. Tant que ce n'est pas fait, `AURALIS_AVOIRS_ARMED` + plafond restent
 requis.
+
+## Voie cron (`cron_avoirs_du_jour.py`)
+
+Le cron du soir de Render crée et finalise chaque soir, à 22h heure de Paris,
+les avoirs des remboursements du jour. Il ne peut pas utiliser
+`AURALIS_AVOIRS_ARMED`, qui reste interdit de persistance. Il a donc son propre
+déblocage :
+
+- `AURALIS_AVOIRS_CRON=1` est **persisté dans l'environnement du service cron
+  Render, et nulle part ailleurs**. Il n'arme rien par lui-même : seul le pilote,
+  en appelant `activer_mode_cron()`, le rend opérant. Un script manuel lancé
+  avec cette variable reste bloqué, et en mode cron `AURALIS_AVOIRS_ARMED` est
+  ignoré (voir `test_cron_avoirs_du_jour.py`).
+- Plafond propre : `AURALIS_AVOIRS_CRON_CAP`, **40** par nuit par défaut (environ 9
+  remboursements par jour en moyenne). Au-delà, le run s'arrête net, envoie une
+  alerte Telegram, et le reste est repris le lendemain grâce à la fenêtre glissante.
+- La finalisation ne porte que sur les avoirs créés **par ce run**, après le
+  contrôle de `finaliser_avoirs.controler()` (encore en brouillon, montant
+  attendu, lié à une facture). Restent en brouillon, et sont signalés : les
+  avoirs plafonnés, non liés ou au montant divergent, ceux dont la facture n'a
+  été trouvée que par sa mention, ainsi que tout échec de finalisation. Dès qu'il
+  y a un cas à revoir, un mail interne part vers `contact@zephyrosc.com` (`AVOIRS_MAIL_TO`,
+  SMTP OVH de smiirl-counter) — jamais vers le client.
+
+Chaque avoir reste tracé dans `avoirs_audit.log`. Ce fichier est éphémère sur
+Render : la trace durable est le récap Telegram, envoyé chaque nuit, y compris
+les nuits sans remboursement (« RAS »).

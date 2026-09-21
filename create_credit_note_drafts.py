@@ -94,11 +94,15 @@ def shopify_get(shop, path, params=None):
     return r
 
 
-def fetch_orders_with_refunds_in_period(shop, date_from, date_to):
-    """Récupère toutes les commandes mises à jour dans la fenêtre [from-30j, to+15j]
-    avec financial_status partially_refunded ou refunded. Itère via pagination."""
+def fetch_orders_with_refunds_in_period(shop, date_from, date_to, marge_jours=180):
+    """Récupère toutes les commandes mises à jour dans la fenêtre [from-marge, to+15j]
+    avec financial_status partially_refunded ou refunded. Itère via pagination.
+
+    `marge_jours` : 180 pour les campagnes (rattrapage de périodes anciennes). Le
+    cron nocturne peut descendre à 2 : un remboursement met à jour le updated_at
+    de la commande, donc tout refund de la fenêtre y tombe."""
     # On élargit la fenêtre updated_at pour ne pas rater une commande ancienne refundée en janvier
-    grace_from = (datetime.fromisoformat(date_from) - timedelta(days=180)).strftime("%Y-%m-%dT00:00:00Z")
+    grace_from = (datetime.fromisoformat(date_from) - timedelta(days=marge_jours)).strftime("%Y-%m-%dT00:00:00Z")
     grace_to   = (datetime.fromisoformat(date_to)   + timedelta(days=15 )).strftime("%Y-%m-%dT23:59:59Z")
 
     all_orders = []
@@ -154,15 +158,30 @@ def pl_get(path, params=None):
 # ═══════════════════════════════════════════════════════════════════════════
 _AVOIR_AUDIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avoirs_audit.log")
 _avoirs_crees = 0  # compteur par invocation
+plafond_atteint = False  # lu par le pilote cron pour alerter
+
+# 5. VOIE CRON — le cron nocturne (cron_avoirs_du_jour.py) a son propre
+#    déblocage : AURALIS_AVOIRS_CRON=1, persisté dans l'environnement Render,
+#    mais qui n'arme RIEN tant que le pilote n'a pas appelé activer_mode_cron().
+#    Un script manuel lancé avec cette variable reste donc bloqué. Plafond
+#    propre AURALIS_AVOIRS_CRON_CAP (défaut 40 par nuit).
+_mode_cron = False
+
+def activer_mode_cron():
+    global _mode_cron
+    _mode_cron = True
 
 def _avoirs_armes():
+    if _mode_cron:
+        return os.environ.get("AURALIS_AVOIRS_CRON") == "1"
     return os.environ.get("AURALIS_AVOIRS_ARMED") == "1"
 
 def _plafond_avoirs():
+    var, defaut = ("AURALIS_AVOIRS_CRON_CAP", 40) if _mode_cron else ("AURALIS_AVOIRS_CAP", 5)
     try:
-        return max(0, int(os.environ.get("AURALIS_AVOIRS_CAP", "5")))
+        return max(0, int(os.environ.get(var, str(defaut))))
     except ValueError:
-        return 5
+        return defaut
 
 class _BlockedResponse:
     status_code = 403
@@ -183,7 +202,7 @@ def _trace_avoir(body, resp):
         log.warning(f"trace avoir échouée: {e}")
 
 def pl_post(path, body):
-    global _avoirs_crees
+    global _avoirs_crees, plafond_atteint
     is_avoir = path.strip("/") == "customer_invoices"
     if is_avoir:
         if not _avoirs_armes():
@@ -192,6 +211,7 @@ def pl_post(path, body):
                       "Plafond/lancement : AURALIS_AVOIRS_CAP (défaut 5).")
             return _BlockedResponse()
         if _avoirs_crees >= _plafond_avoirs():
+            plafond_atteint = True
             log.error(f"🔒 Plafond de {_plafond_avoirs()} avoirs atteint pour ce lancement — ARRÊT NET. "
                       "Relancer délibérément (ou AURALIS_AVOIRS_CAP=N) pour continuer.")
             return _CapResponse()
@@ -214,6 +234,18 @@ def find_original_invoice(order_name, order_date_iso):
     Pagination complète à chaque date scannée."""
     base = datetime.strptime(order_date_iso[:10], "%Y-%m-%d").date()
     needle = order_name.lstrip("#")
+    # Match en POSITION d'abord : la ligne « Commande #X » désigne la commande
+    # facturée. Une simple sous-chaîne prenait pour la facture de X celle d'une
+    # autre commande qui CITE X (« Neubestellung nach Storno von #TZ6960 » sur la
+    # facture de TZ6971), ou celle de X0 pour X. Les factures nées d'un devis
+    # portent le n° seul sur sa ligne, ou après « | » en fin de ligne
+    # (« D-2026-05-221474\nRDC4278 », « … | RDC3838 »). La recherche large,
+    # bornée au token, ne sert qu'à défaut ; elle est marquée _match="mention"
+    # pour que le cron ne finalise pas dessus.
+    re_commande = re.compile(rf"Commande\s*#?{re.escape(needle)}(?![0-9A-Za-z])"
+                             rf"|(?m:(?:^|\|)[ \t]*#?{re.escape(needle)}[ \t]*$)")
+    re_token = re.compile(rf"(?<![0-9A-Za-z]){re.escape(needle)}(?![0-9A-Za-z])")
+    repli = None
     for delta in range(-2, 16):  # -2 à +15 jours
         d = (base + timedelta(days=delta)).strftime("%Y-%m-%d")
         fl = json.dumps([{"field": "date", "operator": "eq", "value": d}])
@@ -229,13 +261,15 @@ def find_original_invoice(order_name, order_date_iso):
                 # avoir récemment créé serait pris pour la facture d'origine.
                 if float(inv.get("amount") or 0) < 0 or (inv.get("credited_invoice") or {}).get("id"):
                     continue
-                sm = (inv.get("special_mention") or "") + " " + (inv.get("label") or "")
-                if needle in sm:
-                    return inv
+                sm = (inv.get("special_mention") or "") + "\n" + (inv.get("label") or "")
+                if re_commande.search(sm):
+                    return {**inv, "_match": "commande"}
+                if repli is None and re_token.search(sm):
+                    repli = {**inv, "_match": "mention"}
             if not data.get("has_more"): break
             cursor = data.get("next_cursor")
             if not cursor: break
-    return None
+    return repli
 
 
 def fetch_invoice_lines(invoice_id):
@@ -317,7 +351,13 @@ def process_one_refund(order, refund, invoice, invoice_lines, store_config, dry_
     inv_number  = invoice["invoice_number"]
 
     # Détection FULL vs PARTIAL : compare transaction refund vs total invoice
-    tx_total = sum(float(tx.get("amount",0) or 0) for tx in refund.get("transactions",[]) if tx.get("kind") == "refund")
+    # Seules les transactions ABOUTIES sont de l'argent rendu. Shopify garde la
+    # trace des remboursements en échec (carte refusée, plafond) avec le même
+    # kind="refund" : les compter gonfle l'avoir d'un montant jamais remboursé,
+    # et quand le commerçant refait le remboursement à la main, le même argent
+    # est compté deux fois (cas #LFC26248, #LFC34414).
+    tx_total = sum(float(tx.get("amount", 0) or 0) for tx in refund.get("transactions", [])
+                   if tx.get("kind") == "refund" and tx.get("status") == "success")
     inv_total = float(invoice.get("currency_amount", "0") or 0)
     # FULL si tx ≈ invoice OU si tx > invoice (= refund Shopify dépasse la facture initiale,
     # cas typique des prix Shopify modifiés depuis la facturation → on cap au montant facture).
@@ -369,26 +409,57 @@ def process_one_refund(order, refund, invoice, invoice_lines, store_config, dry_
             if target_ttc == 0:
                 log.warning(f"    [{order_name}] line sku={sku} subtotal=0 → skip ligne")
                 continue
-            total_target_ttc += target_ttc
-
             match = find_pl_line_for_shopify_item(invoice_lines, sku, title)
             if not match:
-                log.warning(f"    [{order_name}] Pas de ligne PL pour SKU={sku} title={title[:40]!r} → skip ligne")
+                # Le libellé Pennylane ne reprend pas toujours le titre Shopify
+                # (« 3 x Filet de camouflage rectangulaire 3×8 m » côté facture
+                # contre « Filet de camouflage renforcé polyester - Sable -
+                # Carré / Rectangle - 3 x 8 m » côté boutique), et certaines
+                # lignes n'ont pas de SKU. On créditait alors le montant au
+                # total visé AVANT d'abandonner la ligne : l'argent disparaissait
+                # de l'avoir sans laisser d'écart à solder, et un remboursement
+                # dont aucune ligne ne matchait finissait purement ignoré
+                # (skip_no_lines — cas #LFC39497, 707,97 €). On crée donc une
+                # ligne au titre Shopify, au taux dominant de la facture.
+                vat_code = dominant_vat(invoice_lines)
+                ht = round(target_ttc / (1 + vat_to_decimal(vat_code)) / qty, 5)
+                avoir_lines.append({
+                    "label": f"Avoir - {title or 'ligne remboursée'}",
+                    "quantity": -qty,
+                    "unit": "piece",
+                    "raw_currency_unit_price": str(ht),
+                    "vat_rate": vat_code,
+                    "discount": {"type": "relative", "value": "0"},
+                })
+                total_target_ttc += target_ttc
+                log.warning(f"    [{order_name}] pas de ligne PL pour SKU={sku} "
+                            f"title={title[:40]!r} → ligne créée au titre Shopify "
+                            f"({target_ttc:.2f}€ @ {vat_code})")
                 continue
+            total_target_ttc += target_ttc
 
             product_id = (match.get("product") or {}).get("id")
             discount_pct = float((match.get("discount") or {}).get("value", "0"))
             vat_rate = vat_to_decimal(match.get("vat_rate", "FR_200"))
             unit_price = compute_raw_unit_price(target_ttc, -qty, discount_pct, vat_rate)
 
-            avoir_lines.append({
-                "product_id": int(product_id) if product_id else None,
+            ligne = {
                 "label": f"Avoir - {match.get('label','')}",
                 "quantity": -qty,
                 "unit": "piece",
                 "raw_currency_unit_price": str(unit_price),
                 "discount": {"type": "relative", "value": str(discount_pct)},
-            })
+                # Sans vat_rate explicite, Pennylane retombe sur le taux par
+                # défaut du produit — faux dès que la facture porte un autre
+                # taux (exempt, NL_210…). La branche FULL le passait déjà.
+                "vat_rate": match.get("vat_rate", "FR_200"),
+            }
+            # product_id: null fait refuser tout le document (HTTP 400
+            # « The schema of the object isn't any of the following » — cas
+            # #HC4120) : la clé doit être absente, pas nulle.
+            if product_id:
+                ligne["product_id"] = int(product_id)
+            avoir_lines.append(ligne)
 
         # Frais de port remboursés, gestes commerciaux, restocking fees : ils
         # vivent dans order_adjustments, pas dans les lignes. Tant qu'on les
@@ -656,6 +727,80 @@ def already_has_credit_note(invoice_id, customer_id):
     return avoirs[0] if avoirs else None
 
 
+def traiter_refunds(store, todo, dry_run=False, limit=0):
+    """Traite une liste de (commande, refund) d'une boutique : facture d'origine,
+    anti-doublon, création et lettrage. Partagé par main() et le cron nocturne.
+    Retourne (stats, revue, plafonnes, resultats)."""
+    stats = {"ok":0, "skip_existing":0, "skip_no_invoice":0, "skip_no_lines":0, "errors":0,
+             "dry_run":0, "warn_unlinked":0, "error_amount_mismatch":0, "skip_ambigu":0,
+             "skip_overcredit":0, "skip_invoice_zero":0}
+    revue = []      # cas à trancher à la main
+    resultats = []  # un dict par refund traité (pilote cron)
+    plafonnes = []  # avoirs rognés au solde de la facture (information)
+    for i, (o, ref) in enumerate(todo, 1):
+        if limit and i > limit: break
+        order_name = o["name"]
+        refund_date = ref["created_at"][:10]
+        log.info(f"\n[{i}/{len(todo)}] {order_name} refund {ref['id']} du {refund_date}")
+
+        # Find original invoice
+        inv = find_original_invoice(order_name, o["created_at"])
+        if not inv:
+            log.warning(f"    Pas de facture Pennylane trouvée pour {order_name} (date order {o['created_at'][:10]})")
+            stats["skip_no_invoice"] += 1
+            resultats.append({"status": "skip_no_invoice", "order": order_name, "refund_id": ref["id"]}); continue
+
+        # Anti-doublon au niveau du REFUND (et non de la facture) : relecture
+        # Pennylane avant chaque création, avoirs non liés compris.
+        cust_id = (inv.get("customer") or {}).get("id")
+        avoirs = find_avoirs_for_invoice(inv["id"], cust_id, order_name)
+        refund_ttc = sum(float(tx.get("amount", 0) or 0)
+                         for tx in ref.get("transactions", [])
+                         if tx.get("kind") == "refund" and tx.get("status") == "success")
+        match, ambigus = match_avoir_for_refund(avoirs, ref["id"], refund_date, refund_ttc)
+        if match:
+            lien = "lié" if match["linked"] else "NON lié"
+            log.info(f"    ⏭  Avoir déjà existant pour CE refund : id={match['id']} "
+                     f"(number={match.get('invoice_number')}, {lien}, "
+                     f"reconnu par {match['match_par']}, {match['amount']}€)")
+            stats["skip_existing"] += 1
+            resultats.append({"status": "skip_existing", "order": order_name, "refund_id": ref["id"]}); continue
+        if ambigus:
+            ids = ", ".join(str(a["id"]) for a in ambigus)
+            log.warning(f"    ⏭  {len(ambigus)} avoir(s) non identifiable(s) sur cette commande (id={ids}) : "
+                        f"impossible de dire s'ils couvrent ce refund → rien créé, à trancher à la main")
+            stats["skip_ambigu"] += 1
+            revue.append((order_name, ref["id"], f"avoir(s) ambigu(s) id={ids}"))
+            resultats.append({"status": "skip_ambigu", "order": order_name, "refund_id": ref["id"]})
+            continue
+
+        # Fetch invoice lines
+        inv_lines = fetch_invoice_lines(inv["id"])
+        if not inv_lines:
+            log.warning(f"    Facture {inv['invoice_number']} : 0 ligne (??) → skip")
+            stats["skip_no_lines"] += 1
+            resultats.append({"status": "skip_no_lines", "order": order_name, "refund_id": ref["id"]}); continue
+
+        # Process
+        result = process_one_refund(o, ref, inv, inv_lines, store, dry_run=dry_run,
+                                    avoirs_existants=avoirs)
+        stats[result["status"]] = stats.get(result["status"], 0) + 1
+        result["match_facture"] = inv.get("_match")
+        result.setdefault("inv_number", inv.get("invoice_number"))
+        resultats.append(result)
+        if result["status"] == "skip_invoice_zero":
+            revue.append((order_name, ref["id"],
+                          f"facture {result['inv_number']} à {result['inv_total']:.2f}€ "
+                          f"mais {result['tx_total']:.2f}€ remboursés côté Shopify"))
+        if result["status"] == "skip_overcredit":
+            revue.append((order_name, ref["id"],
+                          f"sur-crédit : déjà {result['deja_credite']:.2f}€ + {result['a_crediter']:.2f}€ "
+                          f"> facture {result['inv_total']:.2f}€ — {result.get('motif','')}"))
+        if result.get("plafonne"):
+            plafonnes.append((order_name, ref["id"], result["plafonne"]))
+    return stats, revue, plafonnes, resultats
+
+
 def main():
     parser = argparse.ArgumentParser(description="Crée des avoirs brouillon Pennylane depuis refunds Shopify")
     parser.add_argument("--shop", required=True, help="Code shop (LFC, RED, HET, MTC, RETE, TZ, LVO, UNIV, MO)")
@@ -696,64 +841,7 @@ def main():
                 todo.append((o, ref))
     log.info(f"  → {len(todo)} refunds dans la fenêtre [{args.date_from}, {args.date_to}]")
 
-    stats = {"ok":0, "skip_existing":0, "skip_no_invoice":0, "skip_no_lines":0, "errors":0,
-             "dry_run":0, "warn_unlinked":0, "error_amount_mismatch":0, "skip_ambigu":0,
-             "skip_overcredit":0, "skip_invoice_zero":0}
-    revue = []      # cas à trancher à la main
-    plafonnes = []  # avoirs rognés au solde de la facture (information)
-    for i, (o, ref) in enumerate(todo, 1):
-        if args.limit and i > args.limit: break
-        order_name = o["name"]
-        refund_date = ref["created_at"][:10]
-        log.info(f"\n[{i}/{len(todo)}] {order_name} refund {ref['id']} du {refund_date}")
-
-        # Find original invoice
-        inv = find_original_invoice(order_name, o["created_at"])
-        if not inv:
-            log.warning(f"    Pas de facture Pennylane trouvée pour {order_name} (date order {o['created_at'][:10]})")
-            stats["skip_no_invoice"] += 1; continue
-
-        # Anti-doublon au niveau du REFUND (et non de la facture) : relecture
-        # Pennylane avant chaque création, avoirs non liés compris.
-        cust_id = (inv.get("customer") or {}).get("id")
-        avoirs = find_avoirs_for_invoice(inv["id"], cust_id, order_name)
-        refund_ttc = sum(float(tx.get("amount", 0) or 0)
-                         for tx in ref.get("transactions", []) if tx.get("kind") == "refund")
-        match, ambigus = match_avoir_for_refund(avoirs, ref["id"], refund_date, refund_ttc)
-        if match:
-            lien = "lié" if match["linked"] else "NON lié"
-            log.info(f"    ⏭  Avoir déjà existant pour CE refund : id={match['id']} "
-                     f"(number={match.get('invoice_number')}, {lien}, "
-                     f"reconnu par {match['match_par']}, {match['amount']}€)")
-            stats["skip_existing"] += 1; continue
-        if ambigus:
-            ids = ", ".join(str(a["id"]) for a in ambigus)
-            log.warning(f"    ⏭  {len(ambigus)} avoir(s) non identifiable(s) sur cette commande (id={ids}) : "
-                        f"impossible de dire s'ils couvrent ce refund → rien créé, à trancher à la main")
-            stats["skip_ambigu"] += 1
-            revue.append((order_name, ref["id"], f"avoir(s) ambigu(s) id={ids}"))
-            continue
-
-        # Fetch invoice lines
-        inv_lines = fetch_invoice_lines(inv["id"])
-        if not inv_lines:
-            log.warning(f"    Facture {inv['invoice_number']} : 0 ligne (??) → skip")
-            stats["skip_no_lines"] += 1; continue
-
-        # Process
-        result = process_one_refund(o, ref, inv, inv_lines, store, dry_run=args.dry_run,
-                                    avoirs_existants=avoirs)
-        stats[result["status"]] = stats.get(result["status"], 0) + 1
-        if result["status"] == "skip_invoice_zero":
-            revue.append((order_name, ref["id"],
-                          f"facture {result['inv_number']} à {result['inv_total']:.2f}€ "
-                          f"mais {result['tx_total']:.2f}€ remboursés côté Shopify"))
-        if result["status"] == "skip_overcredit":
-            revue.append((order_name, ref["id"],
-                          f"sur-crédit : déjà {result['deja_credite']:.2f}€ + {result['a_crediter']:.2f}€ "
-                          f"> facture {result['inv_total']:.2f}€ — {result.get('motif','')}"))
-        if result.get("plafonne"):
-            plafonnes.append((order_name, ref["id"], result["plafonne"]))
+    stats, revue, plafonnes, _ = traiter_refunds(store, todo, dry_run=args.dry_run, limit=args.limit)
 
     if plafonnes:
         total = sum(p[2] for p in plafonnes)
