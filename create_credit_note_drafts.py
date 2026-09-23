@@ -73,10 +73,35 @@ STORES = _build_stores()
 # ─────────────────────────────────────────────────────────────────────────
 _shopify_tokens = {}
 
+TENTATIVES_HTTP = 6
+
+
+def requete(method, url, **kw):
+    """Requête HTTP avec reprise bornée sur 429 et 5xx (Retry-After respecté,
+    sinon attente exponentielle plafonnée à 30 s). L'app Shopify est partagée
+    avec smiirl-counter : son quota peut être déjà entamé quand le cron passe
+    (LVO, 429 sur access_scopes le 22/09). Au-delà, la dernière réponse est
+    rendue telle quelle à l'appelant."""
+    for tentative in range(TENTATIVES_HTTP):
+        r = requests.request(method, url, **kw)
+        if r.status_code != 429 and r.status_code < 500:
+            return r
+        if tentative == TENTATIVES_HTTP - 1:
+            break
+        try:
+            attente = float(r.headers.get("Retry-After") or 0)
+        except ValueError:
+            attente = 0
+        attente = min(max(attente, 2 ** tentative), 30)
+        log.warning(f"    HTTP {r.status_code} sur {url.split('?')[0]} — nouvel essai dans {attente:.0f}s")
+        time.sleep(attente)
+    return r
+
+
 def get_shopify_token(shop):
     key = shop["store"]
     if key in _shopify_tokens: return _shopify_tokens[key]
-    r = requests.post(f'https://{shop["store"]}/admin/oauth/access_token',
+    r = requete("POST", f'https://{shop["store"]}/admin/oauth/access_token',
         data={"grant_type":"client_credentials","client_id":shop["client_id"],"client_secret":shop["client_secret"]},
         headers={"Content-Type":"application/x-www-form-urlencoded"}, timeout=15)
     r.raise_for_status()
@@ -86,10 +111,8 @@ def get_shopify_token(shop):
 
 def shopify_get(shop, path, params=None):
     tok = get_shopify_token(shop)
-    r = requests.get(f'https://{shop["store"]}/admin/api/{SHOPIFY_API_VERSION}/{path}',
+    r = requete("GET", f'https://{shop["store"]}/admin/api/{SHOPIFY_API_VERSION}/{path}',
         headers={"X-Shopify-Access-Token": tok}, params=params, timeout=30)
-    if r.status_code == 429:
-        time.sleep(2); return shopify_get(shop, path, params)
     r.raise_for_status()
     return r
 
@@ -117,8 +140,7 @@ def fetch_orders_with_refunds_in_period(shop, date_from, date_to, marge_jours=18
     }
     while url:
         tok = get_shopify_token(shop)
-        r = requests.get(url, headers={"X-Shopify-Access-Token": tok}, params=params if "orders.json" in url else None, timeout=30)
-        if r.status_code == 429: time.sleep(2); continue
+        r = requete("GET", url, headers={"X-Shopify-Access-Token": tok}, params=params if "orders.json" in url else None, timeout=30)
         r.raise_for_status()
         all_orders.extend(r.json().get("orders", []))
         m = re.search(r'<([^>]+)>;\s*rel="next"', r.headers.get("Link",""))
@@ -131,8 +153,7 @@ def fetch_orders_with_refunds_in_period(shop, date_from, date_to, marge_jours=18
 # PENNYLANE
 # ─────────────────────────────────────────────────────────────────────────
 def pl_get(path, params=None):
-    r = requests.get(f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, params=params, timeout=30)
-    if r.status_code == 429: time.sleep(2); return pl_get(path, params)
+    r = requete("GET", f"{PL_BASE}/{path.lstrip('/')}", headers=PL_HEADERS, params=params, timeout=30)
     if r.status_code != 200:
         log.error(f"  PL GET {path} HTTP {r.status_code}: {r.text[:200]}")
         return None
@@ -227,6 +248,10 @@ def pl_post(path, body):
     return r
 
 
+class RechercheFactureImpossible(RuntimeError):
+    """Pennylane n'a pas répondu pendant la recherche de la facture d'origine."""
+
+
 def find_original_invoice(order_name, order_date_iso):
     """Trouve l'invoice Pennylane pour une commande Shopify.
     Scan -2 à +15 jours autour de l'order_date (les factures sont parfois créées
@@ -254,7 +279,10 @@ def find_original_invoice(order_name, order_date_iso):
             params = {"filter": fl, "limit": 100}
             if cursor: params["cursor"] = cursor
             data = pl_get("customer_invoices", params)
-            if not data: break
+            if data is None:
+                # Pennylane en erreur malgré les reprises : conclure « pas de
+                # facture » serait faux, on remonte l'échec à l'appelant.
+                raise RechercheFactureImpossible(f"{order_name} : Pennylane en erreur le {d}")
             for inv in data.get("items", []):
                 # Un avoir porte lui aussi « Commande {name} » dans son
                 # special_mention et il est daté du jour : sans ce filtre, un
@@ -744,7 +772,13 @@ def traiter_refunds(store, todo, dry_run=False, limit=0):
         log.info(f"\n[{i}/{len(todo)}] {order_name} refund {ref['id']} du {refund_date}")
 
         # Find original invoice
-        inv = find_original_invoice(order_name, o["created_at"])
+        try:
+            inv = find_original_invoice(order_name, o["created_at"])
+        except RechercheFactureImpossible as e:
+            log.error(f"    {e} → rien créé, repris au prochain run")
+            stats["errors"] += 1
+            resultats.append({"status": "error_lookup", "order": order_name, "refund_id": ref["id"],
+                              "error": str(e)}); continue
         if not inv:
             log.warning(f"    Pas de facture Pennylane trouvée pour {order_name} (date order {o['created_at'][:10]})")
             stats["skip_no_invoice"] += 1
