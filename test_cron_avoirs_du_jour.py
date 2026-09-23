@@ -115,3 +115,123 @@ def test_mail_ne_porte_que_les_defauts():
     assert "#LFC3" in corps and "#LFC1" not in corps and "#LFC2" not in corps
     rapport["brouillons"] = []
     assert not cron.a_revoir(rapport)   # que des succès : pas de mail
+
+
+def _rapport_vide():
+    return {"crees": [], "finalises": set(), "brouillons": [], "a_trancher": [], "en_attente": [],
+            "alertes": [], "deja_faits": 0, "boutiques": 9, "fenetre": "15/09 → 22/09"}
+
+
+def test_jour_vide_le_dit():
+    texte = cron.recap(_rapport_vide(), datetime(2026, 9, 22).date(), False)
+    assert "Aucun avoir à faire aujourd'hui" in texte and "9 boutique(s)" in texte
+    assert "15/09 → 22/09" in texte
+
+
+@pytest.mark.parametrize("env, statut", [({}, None), ({"TELEGRAM_BOT_TOKEN": "t", "TELEGRAM_CHAT_ID": "c"}, 400)])
+def test_telegram_ko_bascule_sur_le_mail(monkeypatch, env, statut):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    class Rep:
+        status_code = statut
+        text = "Bad Request: chat not found"
+        def json(self): return {"ok": False}
+    monkeypatch.setattr(cron.requests, "post", lambda *a, **k: Rep())
+    mails = []
+    monkeypatch.setattr(cron, "mail_revue", lambda sujet, corps: mails.append((sujet, corps)))
+    code = cron.notifier(_rapport_vide(), "Avoirs du 22/09/2026\n\n✅ Aucun avoir", datetime(2026, 9, 22), False)
+    assert code == 1 and len(mails) == 1
+    assert "Telegram KO" in mails[0][0] and "Aucun avoir" in mails[0][1]
+
+
+def test_telegram_ok_jour_vide_pas_de_mail(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "c")
+
+    class Rep:
+        status_code = 200
+        text = ""
+        def json(self): return {"ok": True}
+    monkeypatch.setattr(cron.requests, "post", lambda *a, **k: Rep())
+    mails = []
+    monkeypatch.setattr(cron, "mail_revue", lambda *a: mails.append(a))
+    assert cron.notifier(_rapport_vide(), "x", datetime(2026, 9, 22), False) == 0
+    assert mails == []
+
+
+class _Rep:
+    def __init__(self, code, headers=None):
+        self.status_code, self.headers, self.text = code, headers or {}, ""
+
+
+def test_requete_reprend_sur_429(monkeypatch):
+    reponses = iter([_Rep(429, {"Retry-After": "1"}), _Rep(503), _Rep(200)])
+    monkeypatch.setattr(C.requests, "request", lambda *a, **k: next(reponses))
+    attentes = []
+    monkeypatch.setattr(C.time, "sleep", attentes.append)
+    assert C.requete("GET", "https://x/admin/oauth/access_scopes.json").status_code == 200
+    assert len(attentes) == 2
+
+
+def test_requete_bornee(monkeypatch):
+    monkeypatch.setattr(C.requests, "request", lambda *a, **k: _Rep(429))
+    monkeypatch.setattr(C.time, "sleep", lambda s: None)
+    assert C.requete("GET", "https://x").status_code == 429   # rendu, pas de boucle infinie
+
+
+def test_pennylane_en_erreur_n_est_pas_une_facture_absente(monkeypatch):
+    monkeypatch.setattr(C, "pl_get", lambda path, params=None: None)
+    with pytest.raises(C.RechercheFactureImpossible):
+        C.find_original_invoice("#LFC1", "2026-09-15")
+
+
+def test_plage_de_facturation_pennylane():
+    assert cron.hors_plage_facturation("RED", "2025-07-24")
+    assert cron.hors_plage_facturation("LFC", "2025-04-30")
+    assert not cron.hors_plage_facturation("LFC", "2025-07-24")
+    assert not cron.hors_plage_facturation("TZ", "2026-02-01")
+    assert "introuvable" in cron.motif_sans_facture("2026-03-01")
+
+
+def test_erreur_passagere():
+    import requests
+    err = requests.HTTPError(response=_Rep(429))
+    assert cron.erreur_passagere(err)
+    assert not cron.erreur_passagere(requests.HTTPError(response=_Rep(404)))
+    assert cron.erreur_passagere(requests.ConnectionError())
+    assert not cron.erreur_passagere(KeyError("x"))
+
+
+def _rapport():
+    return {"crees": [], "finalises": set(), "brouillons": [], "a_trancher": [], "en_attente": [],
+            "alertes": [], "deja_faits": 0, "boutiques": 0, "rappels": []}
+
+
+def test_cas_sans_facture_detaille_le_jour_meme_puis_rappel(monkeypatch):
+    store = {"name": "RED", "store": "red"}
+    monkeypatch.setattr(cron, "verifie_scope", lambda s: True)
+    o_ancien = {"name": "RDC5000", "created_at": "2026-04-03T10:00:00",
+                "refunds": [{"id": 1, "created_at": "2026-09-21T11:59:00",
+                             "transactions": [{"kind": "refund", "status": "success", "amount": "75.51"}]}]}
+    o_jour = {"name": "RDC9000", "created_at": "2026-03-02T10:00:00",
+              "refunds": [{"id": 2, "created_at": "2026-09-22T10:00:00",
+                           "transactions": [{"kind": "refund", "status": "success", "amount": "10"}]}]}
+    o_hors_plage = {"name": "RDC2118", "created_at": "2024-08-03T10:00:00",
+                    "refunds": [{"id": 3, "created_at": "2026-09-22T11:59:00",
+                                 "transactions": [{"kind": "refund", "status": "success", "amount": "75.51"}]}]}
+    monkeypatch.setattr(C, "fetch_orders_with_refunds_in_period",
+                        lambda *a, **k: [o_ancien, o_jour, o_hors_plage])
+    monkeypatch.setattr(C, "traiter_refunds", lambda store, todo, dry_run=False: (
+        {}, [], [], [{"status": "skip_no_invoice", "order": o["name"], "refund_id": r["id"]} for o, r in todo]))
+    rapport = _rapport()
+    cron.traiter_boutique(store, "2026-09-15", "2026-09-22", True, rapport)
+    assert rapport["rappels"] == ["RDC5000"]
+    assert len(rapport["a_trancher"]) == 1 and "RDC9000" in rapport["a_trancher"][0]
+    assert "facture Pennylane introuvable" in rapport["a_trancher"][0]
+    texte = cron.recap(rapport, datetime(2026, 9, 22).date(), True)
+    assert "déjà signalés (1) : RDC5000" in texte
+    assert "RDC2118" not in texte          # hors plage de facturation : jamais remonté
+    assert not cron.a_revoir({**rapport, "a_trancher": []})   # un rappel seul n'envoie pas de mail

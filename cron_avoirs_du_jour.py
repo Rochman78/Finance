@@ -31,13 +31,19 @@ si l'heure de Paris est 22h (une seule des deux exécutions, été comme hiver).
 Usage :
     python cron_avoirs_du_jour.py --dry-run --force-heure      # test à blanc
     python cron_avoirs_du_jour.py                               # Render
+    python cron_avoirs_du_jour.py --ping                        # teste Telegram
 """
-import os, sys, argparse, logging, traceback, pathlib, smtplib, ssl
+import os, sys, time, argparse, logging, traceback, pathlib, smtplib, ssl
 from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
-from dotenv import dotenv_values
+from dotenv import dotenv_values, load_dotenv
+
+# En local, les clés sont dans Finance/.env (le load_dotenv() implicite de
+# create_credit_note_drafts ne le trouve pas sous Python 3.14). Sur Render il
+# n'y a pas de .env et les variables d'environnement priment.
+load_dotenv(pathlib.Path(__file__).resolve().parent / ".env", override=False)
 
 import create_credit_note_drafts as C
 from shopify_smiirl import cable_identifiants_smiirl, verifie_scope
@@ -48,6 +54,14 @@ HEURE_PARIS = 22
 JOURS_FENETRE = 7
 MARGE_UPDATED_AT = 2
 MAIL_REVUE_DEFAUT = "contact@zephyrosc.com"
+PAUSE_AVANT_REPRISE = 90   # secondes avant de retenter une boutique en échec
+
+# Début de la facturation Pennylane par boutique (constaté sur les pièces le
+# 23/09/2026). Un remboursement sur une commande antérieure n'a pas de facture
+# à créditer : décision de Charles, il est ignoré sans être signalé (traité à
+# la main hors Pennylane).
+FACTURATION_PENNYLANE_DEPUIS = {"LFC": "2025-05-01"}
+FACTURATION_PENNYLANE_DEFAUT = "2026-02-01"
 
 log = logging.getLogger("cron_avoirs")
 
@@ -68,17 +82,22 @@ def a_une_transaction_en_attente(ref):
 
 
 def telegram(texte):
+    """Envoie le récap. Renvoie None si le message est parti, sinon le motif de
+    l'échec — l'appelant se rabat alors sur le mail : jamais de soir silencieux."""
     tok, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
     if not tok or not chat:
-        log.warning("Telegram non configuré → récap non envoyé")
-        return
-    try:
-        r = requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
-                          json={"chat_id": chat, "text": texte[:4000]}, timeout=10)
-        if r.status_code != 200:
-            log.error(f"Telegram HTTP {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        log.error(f"Telegram injoignable : {e}")
+        motif = "Telegram non configuré (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID absents)"
+    else:
+        try:
+            r = requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+                              json={"chat_id": chat, "text": texte[:4000]}, timeout=10)
+            if r.status_code == 200 and r.json().get("ok"):
+                return None
+            motif = f"Telegram HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            motif = f"Telegram injoignable : {e}"
+    log.error(motif)
+    return motif
 
 
 def _smtp_config():
@@ -120,6 +139,28 @@ def mail_revue(sujet, texte):
         return False
 
 
+def debut_facturation(nom_boutique):
+    return FACTURATION_PENNYLANE_DEPUIS.get(nom_boutique, FACTURATION_PENNYLANE_DEFAUT)
+
+
+def hors_plage_facturation(nom_boutique, date_commande):
+    return date_commande < debut_facturation(nom_boutique)
+
+
+def motif_sans_facture(date_commande):
+    """Commande facturable (dans la plage Pennylane) mais sans facture : anomalie."""
+    jj = f"{date_commande[8:10]}/{date_commande[5:7]}/{date_commande[:4]}"
+    return f"⚠️ facture Pennylane introuvable (commande du {jj}) — aucun avoir créé"
+
+
+def erreur_passagere(e):
+    """429, 5xx, coupure réseau : la boutique mérite un second passage."""
+    if isinstance(e, (requests.ConnectionError, requests.Timeout)):
+        return True
+    rep = getattr(e, "response", None)
+    return rep is not None and (rep.status_code == 429 or rep.status_code >= 500)
+
+
 def a_revoir(rapport):
     return bool(rapport["alertes"] or rapport["brouillons"] or rapport["a_trancher"])
 
@@ -141,14 +182,31 @@ def traiter_boutique(store, date_from, date_to, dry_run, rapport):
                 continue
             if argent_rendu(ref) <= 0:
                 continue  # rien d'encaissé en retour : restock seul ou échec
+            if hors_plage_facturation(nom, o["created_at"][:10]):
+                log.info(f"  {o['name']} (refund {ref['id']}) : commande du {o['created_at'][:10]}, "
+                         f"avant la facturation Pennylane de {nom} → ignoré")
+                continue
             todo.append((o, ref))
+    rapport["boutiques"] = rapport.get("boutiques", 0) + 1
     log.info(f"=== {nom} : {len(todo)} refund(s) à examiner [{date_from} → {date_to}] ===")
     if not todo:
         return
 
     stats, revue, plafonnes, resultats = C.traiter_refunds(store, todo, dry_run=dry_run)
+    par_refund = {ref["id"]: (o, ref) for o, ref in todo}
+    jour = date_to
+
+    def a_trancher(order_name, rid, motif):
+        # La fenêtre J-7 fait repasser un cas sans avoir 7 soirs de suite : il
+        # n'est détaillé que le jour de son remboursement, ensuite simple rappel.
+        o, ref = par_refund.get(rid, ({}, {"created_at": jour}))
+        if ref["created_at"][:10] < jour:
+            rapport["rappels"].append(order_name)
+        else:
+            rapport["a_trancher"].append(f"{order_name} (refund {rid}) — {motif}")
+
     for order_name, rid, motif in revue:
-        rapport["a_trancher"].append(f"{order_name} (refund {rid}) — {motif}")
+        a_trancher(order_name, rid, motif)
     for r in resultats:
         st = r["status"]
         if st in ("ok", "dry_run"):
@@ -171,8 +229,13 @@ def traiter_boutique(store, date_from, date_to, dry_run, rapport):
             rapport["brouillons"].append(f"{r['order']} avoir {r.get('avoir_id')} — {st}")
         elif st == "error_create":
             rapport["alertes"].append(f"❌ {r['order']} création refusée : {r.get('error', '')[:120]}")
-        elif st in ("skip_no_invoice", "skip_no_lines"):
-            rapport["a_trancher"].append(f"{r['order']} (refund {r['refund_id']}) — {st}")
+        elif st == "skip_no_invoice":
+            o, _ = par_refund.get(r["refund_id"], ({"created_at": jour}, None))
+            a_trancher(r["order"], r["refund_id"], motif_sans_facture(o["created_at"][:10]))
+        elif st == "skip_no_lines":
+            a_trancher(r["order"], r["refund_id"], "facture Pennylane sans ligne")
+        elif st == "error_lookup":
+            rapport["alertes"].append(f"❌ {r['order']} : {r.get('error', '')[:120]} — repris demain")
         elif st == "skip_existing":
             rapport["deja_faits"] += 1
 
@@ -229,11 +292,17 @@ def recap(rapport, jour, dry_run):
         lignes += [f"📝 Laissés en brouillon ({len(rapport['brouillons'])})"] + rapport["brouillons"] + [""]
     if rapport["a_trancher"]:
         lignes += [f"✋ À trancher à la main ({len(rapport['a_trancher'])})"] + rapport["a_trancher"] + [""]
+    if rapport.get("rappels"):
+        lignes += [f"↻ Toujours sans avoir, déjà signalés ({len(rapport['rappels'])}) : "
+                   + ", ".join(rapport["rappels"]), ""]
     if rapport["en_attente"]:
         lignes += [f"⏳ Remboursements en attente, repris demain ({len(rapport['en_attente'])})"] \
                   + rapport["en_attente"] + [""]
     if not lignes:
-        lignes.append("RAS — aucun remboursement à créditer.")
+        n = rapport.get("boutiques", 0)
+        fenetre = rapport.get("fenetre")
+        lignes.append(f"✅ Aucun avoir à faire aujourd'hui — aucun remboursement à créditer "
+                      f"sur {n} boutique(s)" + (f" (fenêtre {fenetre})" if fenetre else "") + ".")
     if rapport["deja_faits"]:
         lignes.append(f"({rapport['deja_faits']} remboursement(s) de la fenêtre déjà crédité(s))")
     return tete + "\n\n" + "\n".join(lignes).strip()
@@ -245,7 +314,13 @@ def main():
     ap.add_argument("--force-heure", action="store_true", help="ignore la garde des 22h Paris")
     ap.add_argument("--jours", type=int, default=JOURS_FENETRE, help="profondeur de la fenêtre (J-N → J)")
     ap.add_argument("--shop", action="append", help="limiter à une ou plusieurs boutiques")
+    ap.add_argument("--ping", action="store_true", help="envoie un message de test Telegram et sort")
     args = ap.parse_args()
+
+    if args.ping:
+        motif = telegram("🔔 Test cron avoirs — Telegram OK")
+        print(motif or "Telegram OK — message envoyé.")
+        return 1 if motif else 0
 
     now = datetime.now(timezone.utc)
     if not args.force_heure and not doit_tourner(now):
@@ -265,7 +340,8 @@ def main():
     date_to = jour.isoformat()
     date_from = (jour - timedelta(days=args.jours)).isoformat()
     rapport = {"crees": [], "finalises": set(), "brouillons": [], "a_trancher": [],
-               "en_attente": [], "alertes": [], "deja_faits": 0}
+               "en_attente": [], "alertes": [], "deja_faits": 0, "boutiques": 0, "rappels": [],
+               "fenetre": f"{jour - timedelta(days=args.jours):%d/%m} → {jour:%d/%m}"}
 
     try:
         if not C.PENNYLANE_TOKEN:
@@ -278,6 +354,7 @@ def main():
         stores, absents = cable_identifiants_smiirl()
         for nom in absents:
             rapport["alertes"].append(f"🛑 {nom} : identifiants absents — boutique NON traitée")
+        a_reprendre = []
         for store in stores:
             if args.shop and store["name"] not in args.shop:
                 continue
@@ -285,11 +362,31 @@ def main():
                 traiter_boutique(store, date_from, date_to, args.dry_run, rapport)
             except Exception as e:
                 log.exception(f"{store['name']} en échec")
-                rapport["alertes"].append(f"❌ {store['name']} : {type(e).__name__} {str(e)[:150]}")
+                if erreur_passagere(e):
+                    a_reprendre.append(store)
+                else:
+                    rapport["alertes"].append(f"❌ {store['name']} : {type(e).__name__} {str(e)[:150]}")
             if C.plafond_atteint:
-                rapport["alertes"].append(f"🔒 Plafond de {C._plafond_avoirs()} avoirs atteint — "
-                                          f"run arrêté, le reste sera repris demain")
                 break
+        # Second passage pour les boutiques tombées sur un 429 / 5xx : l'anti-
+        # doublon sur refund_id rend la reprise sûre même après un échec en cours.
+        if a_reprendre and not C.plafond_atteint:
+            log.info(f"Pause {PAUSE_AVANT_REPRISE}s avant reprise de "
+                     f"{', '.join(s['name'] for s in a_reprendre)}")
+            time.sleep(PAUSE_AVANT_REPRISE)
+        for store in a_reprendre:
+            if C.plafond_atteint:
+                rapport["alertes"].append(f"❌ {store['name']} : non traitée (plafond atteint)")
+                continue
+            try:
+                traiter_boutique(store, date_from, date_to, args.dry_run, rapport)
+            except Exception as e:
+                log.exception(f"{store['name']} en échec (2e passage)")
+                rapport["alertes"].append(f"❌ {store['name']} : {type(e).__name__} {str(e)[:150]} "
+                                          f"— NON traitée, reprise demain")
+        if C.plafond_atteint:
+            rapport["alertes"].append(f"🔒 Plafond de {C._plafond_avoirs()} avoirs atteint — "
+                                      f"run arrêté, le reste sera repris demain")
         if not args.dry_run:
             finaliser_du_run(rapport)
     except Exception as e:
@@ -297,10 +394,26 @@ def main():
         rapport["alertes"].append(f"❌ {type(e).__name__} : {str(e)[:200]}\n"
                                   f"{traceback.format_exc()[-600:]}")
 
+    # Une boutique reprise au 2e passage peut avoir signalé deux fois le même cas.
+    for k in ("alertes", "brouillons", "a_trancher", "rappels", "en_attente"):
+        rapport[k] = list(dict.fromkeys(rapport[k]))
     texte = recap(rapport, jour, args.dry_run)
     log.info("\n" + texte)
-    telegram(texte)
-    if a_revoir(rapport) and not args.dry_run:
+    return notifier(rapport, texte, jour, args.dry_run)
+
+
+def notifier(rapport, texte, jour, dry_run):
+    """Récap Telegram chaque soir, mail des défauts s'il y en a. Si Telegram
+    échoue, le récap COMPLET part par mail (seul canal restant) et le run sort
+    en code 1 pour apparaître en échec dans Render."""
+    motif = telegram(texte)
+    if motif and dry_run:
+        return 1
+    if motif:
+        mail_revue(f"⚠️ Telegram KO — Avoirs du {jour.strftime('%d/%m/%Y')}",
+                   f"Le récap Telegram n'a pas pu partir : {motif}\n\n{texte}")
+        return 1
+    if a_revoir(rapport) and not dry_run:
         n = len(rapport["brouillons"]) + len(rapport["a_trancher"])
         sujet = (f"{'🚨 ' if rapport['alertes'] else ''}Avoirs du {jour.strftime('%d/%m/%Y')} — "
                  f"{n} cas à revoir")

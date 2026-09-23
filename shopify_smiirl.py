@@ -13,7 +13,6 @@ Source, par ordre de priorité :
 """
 import os
 import logging
-import requests
 from dotenv import dotenv_values
 
 import create_credit_note_drafts as C
@@ -57,7 +56,7 @@ def cable_identifiants_smiirl():
 
 def verifie_scope(store):
     tok = C.get_shopify_token(store)
-    r = requests.get(f'https://{store["store"]}/admin/oauth/access_scopes.json',
+    r = C.requete("GET", f'https://{store["store"]}/admin/oauth/access_scopes.json',
                      headers={"X-Shopify-Access-Token": tok}, timeout=20)
     r.raise_for_status()
     return "read_all_orders" in {x["handle"] for x in r.json().get("access_scopes", [])}
