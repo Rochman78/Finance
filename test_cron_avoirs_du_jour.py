@@ -60,8 +60,8 @@ def test_voie_cron_et_son_plafond(cran):
     assert C.plafond_atteint
 
 
-def refund(*txs):
-    return {"transactions": [{"kind": k, "status": s, "amount": a} for k, s, a in txs]}
+def refund(*txs, gateway="mollie"):
+    return {"transactions": [{"kind": k, "status": s, "amount": a, "gateway": gateway} for k, s, a in txs]}
 
 
 def test_filtres_de_refund():
@@ -69,6 +69,44 @@ def test_filtres_de_refund():
     assert cron.argent_rendu(refund()) == 0          # restock seul
     assert cron.a_une_transaction_en_attente(refund(("refund", "pending", "5.00")))
     assert not cron.a_une_transaction_en_attente(refund(("refund", "success", "5.00")))
+
+
+def test_pending_shopify_payments_credite_le_jour_meme(monkeypatch):
+    # LFC44204 : pending le 23/09 à 8h52, réussi le 24/09 à 9h → avoir daté du 24.
+    sp = refund(("refund", "pending", "102.00"), gateway="shopify_payments")
+    autre = refund(("refund", "pending", "102.00"))
+    assert cron.argent_rendu(sp) == 0 and cron.a_une_transaction_en_attente(sp)   # campagnes : strict
+    monkeypatch.setattr(C, "ACCEPTER_PENDING_SHOPIFY_PAYMENTS", True)             # cron
+    assert cron.argent_rendu(sp) == 102.0
+    assert not cron.a_une_transaction_en_attente(sp)
+    assert cron.argent_rendu(autre) == 0 and cron.a_une_transaction_en_attente(autre)
+
+
+def _commande_en_echec(monkeypatch, montant_avoir, refund_id="7"):
+    monkeypatch.setattr(C, "ACCEPTER_PENDING_SHOPIFY_PAYMENTS", True)
+    monkeypatch.setattr(cron, "verifie_scope", lambda s: True)
+    o = {"name": "#LFC1", "created_at": "2026-09-07T10:00:00",
+         "refunds": [{"id": 7, "created_at": "2026-09-23T08:52:26",
+                      "transactions": [{"kind": "refund", "status": "failure", "amount": "102.00",
+                                        "gateway": "shopify_payments"}]}]}
+    monkeypatch.setattr(C, "fetch_orders_with_refunds_in_period", lambda *a, **k: [o])
+    monkeypatch.setattr(C, "find_original_invoice", lambda *a: {"id": 1, "customer": {"id": 2}})
+    monkeypatch.setattr(C, "find_avoirs_for_invoice", lambda *a: [
+        {"refund_id": refund_id, "amount": -montant_avoir, "invoice_number": "F-2026-09-23-1"}])
+    monkeypatch.setattr(C, "traiter_refunds", lambda *a, **k: pytest.fail("rien à créer"))
+    rapport = _rapport()
+    cron.traiter_boutique({"name": "LFC", "store": "lfc"}, "2026-09-18", "2026-09-25", True, rapport)
+    return rapport
+
+
+def test_echec_shopify_payments_apres_avoir_alerte(monkeypatch):
+    rapport = _commande_en_echec(monkeypatch, 102.0)
+    assert len(rapport["alertes"]) == 1 and "ÉCHEC" in rapport["alertes"][0]
+    assert "F-2026-09-23-1" in rapport["alertes"][0]
+
+
+def test_echec_shopify_payments_sans_avoir_silencieux(monkeypatch):
+    assert _commande_en_echec(monkeypatch, 102.0, refund_id="999")["alertes"] == []
 
 
 def factures_du_jour(monkeypatch, items):

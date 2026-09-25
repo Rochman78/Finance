@@ -31,6 +31,23 @@ AVOIR_DATE = date.today().strftime("%Y-%m-%d")
 # lieu de plafonner. En deçà, l'avoir est rogné au solde par une ligne dédiée.
 SEUIL_PLAFONNEMENT = 1.00
 
+# Shopify Payments garde un remboursement « pending » environ 24h (refund_pending
+# puis refund_success le lendemain, cas LFC44204 du 23/09/2026). Le cron du soir
+# le compte comme de l'argent rendu, sinon chaque avoir tombe à J+1 (et au mois
+# suivant le dernier jour du mois). Un échec ultérieur est signalé par le cron.
+# Les campagnes manuelles gardent la règle stricte : seul le « success » compte.
+ACCEPTER_PENDING_SHOPIFY_PAYMENTS = False
+
+
+def tx_rendue(tx):
+    """Transaction de remboursement comptée comme argent rendu au client."""
+    if tx.get("kind") != "refund":
+        return False
+    if tx.get("status") == "success":
+        return True
+    return (ACCEPTER_PENDING_SHOPIFY_PAYMENTS and tx.get("status") == "pending"
+            and tx.get("gateway") == "shopify_payments")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
@@ -384,8 +401,9 @@ def process_one_refund(order, refund, invoice, invoice_lines, store_config, dry_
     # kind="refund" : les compter gonfle l'avoir d'un montant jamais remboursé,
     # et quand le commerçant refait le remboursement à la main, le même argent
     # est compté deux fois (cas #LFC26248, #LFC34414).
+    # Sous le cron, un pending Shopify Payments compte aussi (voir tx_rendue).
     tx_total = sum(float(tx.get("amount", 0) or 0) for tx in refund.get("transactions", [])
-                   if tx.get("kind") == "refund" and tx.get("status") == "success")
+                   if tx_rendue(tx))
     inv_total = float(invoice.get("currency_amount", "0") or 0)
     # FULL si tx ≈ invoice OU si tx > invoice (= refund Shopify dépasse la facture initiale,
     # cas typique des prix Shopify modifiés depuis la facturation → on cap au montant facture).
@@ -789,8 +807,7 @@ def traiter_refunds(store, todo, dry_run=False, limit=0):
         cust_id = (inv.get("customer") or {}).get("id")
         avoirs = find_avoirs_for_invoice(inv["id"], cust_id, order_name)
         refund_ttc = sum(float(tx.get("amount", 0) or 0)
-                         for tx in ref.get("transactions", [])
-                         if tx.get("kind") == "refund" and tx.get("status") == "success")
+                         for tx in ref.get("transactions", []) if tx_rendue(tx))
         match, ambigus = match_avoir_for_refund(avoirs, ref["id"], refund_date, refund_ttc)
         if match:
             lien = "lié" if match["linked"] else "NON lié"
