@@ -13,13 +13,20 @@ remboursement reste dans le special_mention.
 
 Pourquoi pas un webhook refunds/create : à la réception, les transactions
 peuvent encore être pending ou finir en échec, et un avoir finalisé ne se
-supprime pas. À 22h, on ne lit que des transactions abouties.
+supprime pas.
+
+Exception Shopify Payments : un remboursement y reste pending environ 24h
+(LFC44204 : pending le 23/09 à 8h52, réussi le 24/09 à 9h). L'attendre datait
+chaque avoir du lendemain. Il est donc crédité le jour même, et un échec
+ultérieur remonte en alerte (avoir supérieur à l'argent réellement rendu).
 
 Garde-fous :
   - déblocage dédié AURALIS_AVOIRS_CRON=1, actif seulement sous ce pilote,
     plafond AURALIS_AVOIRS_CRON_CAP (défaut 40) — voir README_CRAN_SURETE_AVOIRS ;
   - read_all_orders vérifié par boutique (sinon mur des 60 jours silencieux) ;
-  - refunds avec une transaction pending : reportés au lendemain ;
+  - refunds avec une transaction pending hors Shopify Payments : reportés au
+    lendemain ; pending Shopify Payments : crédités le jour même ;
+  - remboursement Shopify Payments en échec alors que son avoir existe : alerte ;
   - refunds sans argent rendu (restock seul, tout en échec) : ignorés ;
   - finalisation limitée aux avoirs « ok » de ce run, non plafonnés, après
     contrôle (brouillon, montant, lettrage) — le reste reste en brouillon et
@@ -73,12 +80,33 @@ def doit_tourner(now_utc):
 
 def argent_rendu(ref):
     return sum(float(tx.get("amount", 0) or 0) for tx in ref.get("transactions", [])
-               if tx.get("kind") == "refund" and tx.get("status") == "success")
+               if C.tx_rendue(tx))
 
 
 def a_une_transaction_en_attente(ref):
-    return any(tx.get("kind") == "refund" and tx.get("status") == "pending"
+    """Pending que le cron ne crédite pas encore (hors Shopify Payments)."""
+    return any(tx.get("kind") == "refund" and tx.get("status") == "pending" and not C.tx_rendue(tx)
                for tx in ref.get("transactions", []))
+
+
+def a_un_echec_shopify_payments(ref):
+    return any(tx.get("kind") == "refund" and tx.get("gateway") == "shopify_payments"
+               and tx.get("status") in ("failure", "error")
+               for tx in ref.get("transactions", []))
+
+
+def avoir_sans_argent_rendu(order, ref):
+    """Avoir déjà émis pour ce refund alors que Shopify Payments a fini en échec :
+    l'avoir dépasse l'argent réellement rendu. Renvoie (n° d'avoir, montant) ou None."""
+    inv = C.find_original_invoice(order["name"], order["created_at"])
+    if not inv:
+        return None
+    avoirs = C.find_avoirs_for_invoice(inv["id"], (inv.get("customer") or {}).get("id"), order["name"])
+    rendu = argent_rendu(ref)
+    for a in avoirs:
+        if a["refund_id"] == str(ref["id"]) and abs(a["amount"]) > rendu + 0.05:
+            return a["invoice_number"], abs(a["amount"])
+    return None
 
 
 def telegram(texte):
@@ -177,6 +205,20 @@ def traiter_boutique(store, date_from, date_to, dry_run, rapport):
         for ref in o.get("refunds", []):
             if not (date_from <= ref["created_at"][:10] <= date_to):
                 continue
+            if a_un_echec_shopify_payments(ref):
+                # Crédité le jour même en pending, puis refusé par la banque.
+                try:
+                    trop = avoir_sans_argent_rendu(o, ref)
+                except C.RechercheFactureImpossible as e:
+                    rapport["alertes"].append(f"❌ {o['name']} : remboursement en échec, "
+                                              f"contrôle de l'avoir impossible ({e}) — repris demain")
+                    continue
+                if trop:
+                    rapport["alertes"].append(
+                        f"🚨 {o['name']} (refund {ref['id']}) : remboursement Shopify Payments en ÉCHEC "
+                        f"mais avoir {trop[0]} de {trop[1]:.2f} € émis — à régulariser à la main "
+                        f"(rendu réel {argent_rendu(ref):.2f} €)")
+                    continue
             if a_une_transaction_en_attente(ref):
                 rapport["en_attente"].append(f"{o['name']} (refund {ref['id']})")
                 continue
@@ -336,6 +378,7 @@ def main():
     logging.getLogger().addHandler(fh)
 
     C.activer_mode_cron()
+    C.ACCEPTER_PENDING_SHOPIFY_PAYMENTS = True
     C.AVOIR_DATE = jour.isoformat()
     date_to = jour.isoformat()
     date_from = (jour - timedelta(days=args.jours)).isoformat()
