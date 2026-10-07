@@ -273,3 +273,51 @@ def test_cas_sans_facture_detaille_le_jour_meme_puis_rappel(monkeypatch):
     assert "déjà signalés (1) : RDC5000" in texte
     assert "RDC2118" not in texte          # hors plage de facturation : jamais remonté
     assert not cron.a_revoir({**rapport, "a_trancher": []})   # un rappel seul n'envoie pas de mail
+
+
+class _Evenements:
+    def __init__(self, events):
+        self._events = events
+
+    def json(self):
+        return {"events": self._events}
+
+
+def _mollie_tardif(monkeypatch, events, gateway="Mollie - SEPA Bank Transfer", saisi="2026-09-09T12:42:34"):
+    """LFC44111 : virement Mollie saisi le 09/09, réglé le 22/09 (fenêtre 15/09 → 22/09)."""
+    monkeypatch.setattr(cron, "verifie_scope", lambda s: True)
+    o = {"id": 8, "name": "#LFC44111", "created_at": "2026-08-26T21:57:45",
+         "refunds": [{"id": 5, "created_at": saisi,
+                      "transactions": [{"kind": "refund", "status": "success", "amount": "1376.98",
+                                        "gateway": gateway}]}]}
+    appels = []
+    monkeypatch.setattr(C, "fetch_orders_with_refunds_in_period", lambda *a, **k: [o])
+    monkeypatch.setattr(C, "shopify_get", lambda s, path, params=None: appels.append(path) or _Evenements(events))
+    vus = []
+    monkeypatch.setattr(C, "traiter_refunds", lambda store, todo, dry_run=False: (
+        vus.extend(r["id"] for _, r in todo) or {}, [], [],
+        [{"status": "skip_no_invoice", "order": o["name"], "refund_id": r["id"]} for o, r in todo]))
+    rapport = _rapport()
+    cron.traiter_boutique({"name": "LFC", "store": "lfc"}, "2026-09-15", "2026-09-22", True, rapport)
+    return vus, appels, rapport
+
+
+def test_virement_mollie_regle_apres_la_fenetre_est_repris(monkeypatch):
+    succes = {"verb": "refund_success", "created_at": "2026-09-22T10:52:42+02:00"}
+    vus, appels, rapport = _mollie_tardif(monkeypatch, [succes])
+    assert vus == [5] and appels == ["orders/8/events.json"]
+    # Sans facture, il est détaillé le jour de son règlement, pas relégué en rappel.
+    assert len(rapport["a_trancher"]) == 1 and not rapport["rappels"]
+
+
+def test_vieux_refund_sans_reglement_recent_reste_ignore(monkeypatch):
+    # Commande retouchée pour une autre raison : pas de refund_success dans la fenêtre.
+    assert _mollie_tardif(monkeypatch, [])[0] == []
+    ancien = {"verb": "refund_success", "created_at": "2026-09-10T09:00:00+02:00"}
+    assert _mollie_tardif(monkeypatch, [ancien])[0] == []
+    # Shopify Payments (réglé en 24h) et refund trop ancien : écartés sans appel.
+    succes = {"verb": "refund_success", "created_at": "2026-09-22T10:52:42+02:00"}
+    vus, appels, _ = _mollie_tardif(monkeypatch, [succes], gateway="shopify_payments")
+    assert vus == [] and appels == []
+    vus, appels, _ = _mollie_tardif(monkeypatch, [succes], saisi="2026-05-01T10:00:00")
+    assert vus == [] and appels == []

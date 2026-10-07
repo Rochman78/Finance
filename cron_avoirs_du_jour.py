@@ -20,12 +20,19 @@ Exception Shopify Payments : un remboursement y reste pending environ 24h
 chaque avoir du lendemain. Il est donc crédité le jour même, et un échec
 ultérieur remonte en alerte (avoir supérieur à l'argent réellement rendu).
 
+Exception virement Mollie : un remboursement SEPA y reste pending 7 à 13 jours
+(TZ6815 : saisi le 08/09, réglé le 15/09 ; LFC44111 : 09/09 → 22/09) et Shopify
+garde la date de saisie. Sorti de la fenêtre avant d'être réglé, il n'était
+plus jamais repris. Il l'est désormais le jour de son événement refund_success,
+et l'avoir porte cette date : celle où l'argent est réellement parti.
+
 Garde-fous :
   - déblocage dédié AURALIS_AVOIRS_CRON=1, actif seulement sous ce pilote,
     plafond AURALIS_AVOIRS_CRON_CAP (défaut 40) — voir README_CRAN_SURETE_AVOIRS ;
   - read_all_orders vérifié par boutique (sinon mur des 60 jours silencieux) ;
   - refunds avec une transaction pending hors Shopify Payments : reportés au
-    lendemain ; pending Shopify Payments : crédités le jour même ;
+    lendemain ; pending Shopify Payments : crédités le jour même ; réglés
+    après leur sortie de la fenêtre : repris le jour du règlement ;
   - remboursement Shopify Payments en échec alors que son avoir existe : alerte ;
   - refunds sans argent rendu (restock seul, tout en échec) : ignorés ;
   - finalisation limitée aux avoirs « ok » de ce run, non plafonnés, après
@@ -62,6 +69,8 @@ JOURS_FENETRE = 7
 MARGE_UPDATED_AT = 2
 MAIL_REVUE_DEFAUT = "contact@zephyrosc.com"
 PAUSE_AVANT_REPRISE = 90   # secondes avant de retenter une boutique en échec
+# Ancienneté maximale d'un remboursement repris à son règlement tardif.
+JOURS_REGLEMENT_TARDIF = 90
 
 # Début de la facturation Pennylane par boutique (constaté sur les pièces le
 # 23/09/2026). Un remboursement sur une commande antérieure n'a pas de facture
@@ -93,6 +102,27 @@ def a_un_echec_shopify_payments(ref):
     return any(tx.get("kind") == "refund" and tx.get("gateway") == "shopify_payments"
                and tx.get("status") in ("failure", "error")
                for tx in ref.get("transactions", []))
+
+
+def date_reglement_tardif(store, order, ref, date_from, date_to):
+    """Remboursement saisi avant la fenêtre mais réglé dedans (virement Mollie
+    resté pending plus de 7 jours) : renvoie la date du règlement, sinon None.
+
+    Ni le refund ni sa transaction ne portent la date du passage en success :
+    seul l'événement refund_success de la commande la donne. Shopify Payments
+    est écarté sans appel (crédité dès le pending, réglé en 24h)."""
+    saisi = ref["created_at"][:10]
+    plancher = (datetime.fromisoformat(date_from) - timedelta(days=JOURS_REGLEMENT_TARDIF)).strftime("%Y-%m-%d")
+    if not (plancher <= saisi < date_from):
+        return None
+    if not any(tx.get("kind") == "refund" and tx.get("status") == "success"
+               and tx.get("gateway") != "shopify_payments" for tx in ref.get("transactions", [])):
+        return None
+    r = C.shopify_get(store, f"orders/{order['id']}/events.json",
+                      {"verb": "refund_success", "created_at_min": f"{date_from}T00:00:00", "limit": 250})
+    jours = [e["created_at"][:10] for e in r.json().get("events", [])
+             if e.get("verb") == "refund_success" and date_from <= e["created_at"][:10] <= date_to]
+    return max(jours) if jours else None
 
 
 def avoir_sans_argent_rendu(order, ref):
@@ -201,10 +231,16 @@ def traiter_boutique(store, date_from, date_to, dry_run, rapport):
     orders = C.fetch_orders_with_refunds_in_period(store, date_from, date_to,
                                                    marge_jours=MARGE_UPDATED_AT)
     todo = []
+    signale_le = {}   # refund réglé tardivement → jour de son règlement
     for o in orders:
         for ref in o.get("refunds", []):
             if not (date_from <= ref["created_at"][:10] <= date_to):
-                continue
+                regle_le = date_reglement_tardif(store, o, ref, date_from, date_to)
+                if not regle_le:
+                    continue
+                log.info(f"  {o['name']} (refund {ref['id']}) : saisi le {ref['created_at'][:10]}, "
+                         f"réglé le {regle_le} → repris")
+                signale_le[ref["id"]] = regle_le
             if a_un_echec_shopify_payments(ref):
                 # Crédité le jour même en pending, puis refusé par la banque.
                 try:
@@ -242,7 +278,7 @@ def traiter_boutique(store, date_from, date_to, dry_run, rapport):
         # La fenêtre J-7 fait repasser un cas sans avoir 7 soirs de suite : il
         # n'est détaillé que le jour de son remboursement, ensuite simple rappel.
         o, ref = par_refund.get(rid, ({}, {"created_at": jour}))
-        if ref["created_at"][:10] < jour:
+        if signale_le.get(rid, ref["created_at"][:10]) < jour:
             rapport["rappels"].append(order_name)
         else:
             rapport["a_trancher"].append(f"{order_name} (refund {rid}) — {motif}")
